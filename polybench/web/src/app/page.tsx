@@ -17,7 +17,7 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   gemini: ["gemini-1.5-pro", "gemini-1.5-flash"],
   ollama: ["llama3.2", "qwen2.5-coder", "codestral"],
   lmstudio: ["local-model"],
-  mock: ["demo"],
+  mock: ["demo", "perfect", "broken", "demo-40"],
 };
 
 const PROVIDER_NAMES: Record<string, string> = {

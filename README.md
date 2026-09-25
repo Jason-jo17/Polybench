@@ -76,8 +76,8 @@ uv run polybench setup        # builds the sandbox images
 ### From the command line
 
 ```bash
-# Preview which tasks a run would include
-uv run polybench run --provider mock --model demo --dry-run
+# Try the whole pipeline without an API key (see "Mock provider" below)
+uv run polybench run --provider mock --model demo -n 3
 
 # 5 samples per task, scored as pass@1, Python tasks only
 uv run polybench run --provider anthropic --model claude-sonnet-4-6 -n 5 -k 1 --lang python
@@ -87,7 +87,7 @@ uv run polybench compare --run-a RUN_A --run-b RUN_B
 uv run polybench report --run-id RUN_ID --out report.html
 ```
 
-Run `uv run polybench --help` for the full list of commands, including `tasks list`, `tasks validate`, `keys`, `export` and `compass` (checks which providers are reachable).
+Add `--dry-run` to any `run` to list the tasks it would include without calling a model. Run `uv run polybench --help` for the full list of commands, including `tasks list`, `tasks verify`, `keys`, `export` and `compass` (checks which providers are reachable).
 
 ### With the dashboard
 
@@ -141,7 +141,20 @@ The server exposes tools to list and validate tasks, start a benchmark run, fetc
 | Groq, Together, Mistral, DeepSeek, xAI, Gemini, Fireworks, Perplexity | `groq`, `together`, `mistral`, `deepseek`, `xai`, `gemini`, `fireworks`, `perplexity` | the matching `*_API_KEY` |
 | Ollama | `ollama` | a running Ollama server (`OLLAMA_BASE_URL`) |
 | LM Studio | `lmstudio` | a running LM Studio server (`LMSTUDIO_BASE_URL`) |
-| Mock | `mock` | nothing; returns canned responses |
+| Mock | `mock` | nothing; see below |
+
+### Mock provider
+
+The mock provider answers from each task's reference solution, so it exercises the real pipeline (code extraction, sandbox, scoring) in every language, with no API key or network. The model name sets how often it's right:
+
+| `--model` | Behaviour |
+| --- | --- |
+| `demo` | correct about 70% of the time |
+| `demo-40` (any number) | correct about that percentage of the time |
+| `perfect` | always correct |
+| `broken` | always returns the bare signature, which fails |
+
+Results are deterministic: the same run always passes and fails the same samples.
 
 ## Configuration
 
@@ -157,11 +170,14 @@ Settings come from environment variables or `polybench/.env`. See [`.env.example
 
 ## Adding tasks
 
-Each task is a JSON file in `polybench/tasks/<language>/` with an `id`, `title`, `prompt`, the `signature` the model must implement, hidden `test_code`, `difficulty`, `tags` and `timeout_seconds`. Copy an existing task as a template, then check it:
+Each task is a JSON file in `polybench/tasks/<language>/` with an `id`, `title`, `prompt`, the `signature` the model must implement, hidden `test_code`, a `reference_solution`, `difficulty`, `tags` and `timeout_seconds`. The tests and the reference solution are never shown to the model. Copy an existing task as a template, then check it:
 
 ```bash
-uv run polybench tasks validate
+uv run polybench tasks validate   # the file is well-formed
+uv run polybench tasks verify     # in the sandbox: the reference passes, the bare signature fails
 ```
+
+`tasks verify` guards the benchmark itself. Every task must be solvable, and its tests must reject an empty implementation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details, and [#15](https://github.com/Jason-jo17/Polybench/issues/15) for task ideas.
 

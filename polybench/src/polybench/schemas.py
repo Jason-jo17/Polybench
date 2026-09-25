@@ -24,6 +24,9 @@ class Task(BaseModel):
     prompt: str  # the problem statement shown to the model
     signature: str  # required function/class signature
     test_code: str  # HIDDEN test suite (never shown to model)
+    # A known-correct solution, also never shown to the model. `polybench tasks
+    # verify` checks that it passes the tests and the bare signature doesn't.
+    reference_solution: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=10, ge=1, le=60)
 

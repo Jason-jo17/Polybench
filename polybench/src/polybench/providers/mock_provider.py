@@ -1,68 +1,83 @@
-"""Deterministic, network-free provider used exclusively in tests."""
+"""Deterministic, network-free provider for demos and tests.
 
+It answers from each task's reference solution, so a mock run exercises the
+whole pipeline (extraction, sandbox, scoring) in every language without an API
+key. The model name chooses how often it answers correctly:
+
+- ``perfect``: always the reference solution
+- ``broken``: always the bare signature, which the hidden tests reject
+- ``demo``: correct about 70% of the time; ``demo-40`` about 40%, and so on
+
+Which samples pass is decided by hashing the prompt and the sample number, so
+the same run always produces the same results. Prompts that don't belong to a
+known task (as in unit tests) get a trivial fallback answer.
+"""
+
+import hashlib
+import re
+import threading
+from functools import lru_cache
+
+from polybench.config import PROJECT_ROOT
 from polybench.providers.base import LLMProvider
-from polybench.schemas import GenerationResult
+from polybench.schemas import GenerationResult, Task
 
-# Keyed by substring of task prompt; value is (passing_code, failing_code).
-_CANNED: dict[str, tuple[str, str]] = {
-    "compare_versions": (
-        "```python\ndef compare_versions(a: str, b: str) -> int:\n"
-        "    pa, pb = [int(x) for x in a.split('.')], [int(x) for x in b.split('.')]\n"
-        "    length = max(len(pa), len(pb))\n"
-        "    pa += [0] * (length - len(pa)); pb += [0] * (length - len(pb))\n"
-        "    for x, y in zip(pa, pb):\n"
-        "        if x < y: return -1\n"
-        "        if x > y: return 1\n"
-        "    return 0\n```",
-        "```python\ndef compare_versions(a: str, b: str) -> int:\n    raise ValueError('not implemented')\n```",
-    ),
-    "LRUCache": (
-        "```python\nfrom collections import OrderedDict\n"
-        "class LRUCache:\n"
-        "    def __init__(self, capacity: int) -> None:\n"
-        "        self.cap = capacity; self.cache: OrderedDict[int, int] = OrderedDict()\n"
-        "    def get(self, key: int) -> int:\n"
-        "        if key not in self.cache: return -1\n"
-        "        self.cache.move_to_end(key); return self.cache[key]\n"
-        "    def put(self, key: int, value: int) -> None:\n"
-        "        if key in self.cache: self.cache.move_to_end(key)\n"
-        "        self.cache[key] = value\n"
-        "        if len(self.cache) > self.cap: self.cache.popitem(last=False)\n```",
-        "```python\nclass LRUCache:\n"
-        "    def __init__(self, capacity: int) -> None: pass\n"
-        "    def get(self, key: int) -> int: return -1\n"
-        "    def put(self, key: int, value: int) -> None: pass\n```",
-    ),
-    "SafeCounter": (
-        '```go\npackage solution\nimport "sync"\n'
-        "type SafeCounter struct{ mu sync.Mutex; n int }\n"
-        "func (c *SafeCounter) Inc() { c.mu.Lock(); c.n++; c.mu.Unlock() }\n"
-        "func (c *SafeCounter) Value() int { c.mu.Lock(); defer c.mu.Unlock(); return c.n }\n```",
-        "```go\npackage solution\ntype SafeCounter struct{ n int }\n"
-        "func (c *SafeCounter) Inc() { c.n++ }\n"
-        "func (c *SafeCounter) Value() int { return c.n }\n```",
-    ),
-    "debounce": (
-        "```javascript\nexport function debounce(fn, waitMs) {\n"
-        "  let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), waitMs); };\n}\n```",
-        "```javascript\nexport function debounce(fn, waitMs) { return fn; }\n```",
-    ),
-}
+_FALLBACK_PASS = "```python\ndef solution(): return 42\n```"
+_FALLBACK_FAIL = "```python\ndef solution(): raise ValueError('mock fail')\n```"
+_DEFAULT_PASS_RATE = 70
 
-_DEFAULT_PASS = "```python\ndef solution(): return 42\n```"
-_DEFAULT_FAIL = "```python\ndef solution(): raise ValueError('mock fail')\n```"
+
+@lru_cache(maxsize=1)
+def _known_tasks() -> tuple[Task, ...]:
+    from polybench.tasks.loader import load_tasks
+
+    try:
+        return tuple(load_tasks(PROJECT_ROOT / "tasks"))
+    except Exception:
+        return ()
+
+
+def _task_for(prompt: str) -> Task | None:
+    """The task whose signature appears in the prompt the engine built."""
+    matches = [t for t in _known_tasks() if t.signature and t.signature in prompt]
+    return max(matches, key=lambda t: len(t.signature), default=None)
+
+
+def _pass_rate(model: str) -> int:
+    if model == "perfect":
+        return 100
+    if model == "broken":
+        return 0
+    m = re.fullmatch(r"demo-(\d{1,3})", model)
+    if m:
+        return min(100, int(m.group(1)))
+    return _DEFAULT_PASS_RATE if model == "demo" else 100
 
 
 class MockProvider(LLMProvider):
-    def __init__(self, model: str = "mock", temperature: float = 0.2) -> None:
+    def __init__(self, model: str = "demo", temperature: float = 0.2) -> None:
         self.model = model
         self.temperature = temperature
         self.should_pass = True
+        self._pass_rate = _pass_rate(model)
+        self._calls: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def _passes(self, prompt: str) -> bool:
+        if not self.should_pass:
+            return False
+        with self._lock:
+            n = self._calls.get(prompt, 0)
+            self._calls[prompt] = n + 1
+        digest = hashlib.sha256(f"{self.model}\n{n}\n{prompt}".encode()).digest()
+        return digest[0] * 100 // 256 < self._pass_rate
 
     def generate(self, prompt: str) -> GenerationResult:
-        for key, (passing, failing) in _CANNED.items():
-            if key in prompt:
-                text = passing if self.should_pass else failing
-                return GenerationResult(raw_output=text, runtime_ms=1)
-        text = _DEFAULT_PASS if self.should_pass else _DEFAULT_FAIL
+        passes = self._passes(prompt)
+        task = _task_for(prompt)
+        if task is None or not task.reference_solution:
+            text = _FALLBACK_PASS if passes else _FALLBACK_FAIL
+        else:
+            code = task.reference_solution if passes else task.signature
+            text = f"```{task.language}\n{code}\n```"
         return GenerationResult(raw_output=text, runtime_ms=1)

@@ -73,11 +73,12 @@ Tests must not need Docker or network access. Mock the sandbox and providers the
 
 Tasks are the easiest way to make PolyBench more useful, and you don't need to know the harness internals. See [#15](https://github.com/Jason-jo17/Polybench/issues/15) for ideas.
 
-1. Copy an existing file from `polybench/tasks/<language>/`. Each task has `id`, `title`, `prompt`, `signature`, `test_code`, `difficulty`, `tags` and `timeout_seconds`.
+1. Copy an existing file from `polybench/tasks/<language>/`. Each task has `id`, `title`, `prompt`, `signature`, `test_code`, `reference_solution`, `difficulty`, `tags` and `timeout_seconds`.
 2. Write the prompt so it states the requirements without giving away the solution.
 3. Write hidden tests (`test_code`) that cover edge cases: empty input, duplicates, large input, invalid input.
-4. Check that a correct reference solution passes and a plausible wrong one fails.
-5. Run `uv run polybench tasks validate`.
+4. Write a correct `reference_solution`. Neither it nor the tests are ever shown to the model.
+5. Run `uv run polybench tasks validate`, then `uv run polybench tasks verify --lang <language>` (needs Docker). Verify checks that your reference passes and that the bare signature fails. If the signature passes, the tests need to check more.
+6. Try a plausible wrong solution too, for example an off-by-one error, and make sure the tests catch it.
 
 Please send one task per pull request.
 

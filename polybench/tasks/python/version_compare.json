@@ -7,5 +7,6 @@
   "signature": "def compare_versions(a: str, b: str) -> int: ...",
   "tags": ["parsing", "edge-cases"],
   "timeout_seconds": 5,
-  "test_code": "from solution import compare_versions\n\ndef test_equal_with_trailing_zeros():\n    assert compare_versions('1.0', '1.0.0') == 0\n\ndef test_numeric_not_lexical():\n    assert compare_versions('1.10', '1.9') == 1\n\ndef test_basic_ordering():\n    assert compare_versions('2.0.1', '2.0.1') == 0\n    assert compare_versions('0.9.9', '1.0.0') == -1\n    assert compare_versions('1.2.3', '1.2.0') == 1\n"
+  "test_code": "from solution import compare_versions\n\ndef test_equal_with_trailing_zeros():\n    assert compare_versions('1.0', '1.0.0') == 0\n\ndef test_numeric_not_lexical():\n    assert compare_versions('1.10', '1.9') == 1\n\ndef test_basic_ordering():\n    assert compare_versions('2.0.1', '2.0.1') == 0\n    assert compare_versions('0.9.9', '1.0.0') == -1\n    assert compare_versions('1.2.3', '1.2.0') == 1\n",
+  "reference_solution": "def compare_versions(a: str, b: str) -> int:\n    pa = [int(p) for p in a.split(\".\")]\n    pb = [int(p) for p in b.split(\".\")]\n    n = max(len(pa), len(pb))\n    pa += [0] * (n - len(pa))\n    pb += [0] * (n - len(pb))\n    return (pa > pb) - (pa < pb)\n"
 }

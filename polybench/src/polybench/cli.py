@@ -1,3 +1,4 @@
+import concurrent.futures
 import csv
 import io
 import json
@@ -23,6 +24,7 @@ from polybench.sandbox.runner import SandboxRunner
 from polybench.schemas import Difficulty, Language, Task
 from polybench.tasks.loader import load_tasks
 from polybench.tasks.registry import TaskRegistry
+from polybench.tasks.verify import verify_task
 
 app = typer.Typer(help="PolyBench AI Coding-Benchmark Harness")
 tasks_app = typer.Typer(help="Manage tasks")
@@ -399,6 +401,49 @@ def tasks_validate(
     except Exception as exc:
         console.print(f"[red]Validation failed:[/red] {exc}")
         raise typer.Exit(1)
+
+
+@tasks_app.command("verify")
+def tasks_verify(
+    tasks: Path = typer.Option(
+        Path(settings.polybench_tasks_dir), help="Tasks directory"
+    ),
+    lang: str = typer.Option(None, help="Only verify tasks in this language"),
+    workers: int = typer.Option(
+        settings.polybench_sandbox_workers, help="Tasks checked in parallel"
+    ),
+) -> None:
+    """Check each task in the sandbox: its reference solution must pass the hidden
+    tests, and its bare signature must fail them. Needs Docker."""
+    selected = TaskRegistry(list(load_tasks(tasks))).filter(lang=lang)
+    if not selected:
+        console.print("[red]No tasks match the given filters[/red]")
+        raise typer.Exit(2)
+
+    _check_docker()
+    _build_images()
+    runner = SandboxRunner()
+    console.print(f"Verifying {len(selected)} tasks…")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        results = list(pool.map(lambda t: verify_task(t, runner), selected))
+
+    table = Table("Task", "Result", title="Task verification")
+    for res in sorted(results, key=lambda r: r.task_id):
+        table.add_row(
+            res.task_id, "[green]ok[/green]" if res.ok else f"[red]{res.problem}[/red]"
+        )
+    console.print(table)
+
+    failed = [r for r in results if not r.ok]
+    for res in failed:
+        if res.output:
+            console.print(f"\n[bold]{res.task_id}[/bold] output:\n{res.output}")
+    if failed:
+        console.print(
+            f"[red]{len(failed)} of {len(results)} tasks have problems.[/red]"
+        )
+        raise typer.Exit(1)
+    console.print(f"[green]All {len(results)} tasks verified.[/green]")
 
 
 @app.command("report")

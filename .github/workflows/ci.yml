@@ -50,3 +50,21 @@ jobs:
         run: npx tsc --noEmit
       - name: Build
         run: npm run build
+
+  tasks:
+    name: tasks (verify in sandbox)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: polybench
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install
+        run: uv sync --all-extras --dev
+      - name: Validate task files
+        run: uv run polybench tasks validate
+      - name: Reference solutions pass, bare signatures fail
+        run: uv run polybench tasks verify
