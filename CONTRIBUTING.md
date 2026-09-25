@@ -64,6 +64,7 @@ Dashboard, from `polybench/web/`:
 ```bash
 npm run lint
 npx tsc --noEmit
+npm test
 npm run build
 ```
 
