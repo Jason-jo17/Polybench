@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +73,15 @@ def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider
     raise ValueError(f"Unknown provider: {provider}")
 
 
-app = FastAPI(title="PolyBench API", dependencies=[Depends(verify_password)])
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    on_startup()
+    yield
+
+
+app = FastAPI(
+    title="PolyBench API", dependencies=[Depends(verify_password)], lifespan=lifespan
+)
 
 # CORS Configuration
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -92,7 +101,6 @@ logging.basicConfig(
 )
 
 
-@app.on_event("startup")
 def on_startup() -> None:
     init_db()
 
