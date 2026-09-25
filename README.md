@@ -10,6 +10,18 @@ You can drive it three ways:
 - **CLI**: `polybench run`, `compare`, `report`, `export` and more, with terminal and HTML reports.
 - **MCP server**: lets an AI agent such as Claude Desktop list tasks, start runs and read results.
 
+## Dashboard
+
+Each run is shown as a grid with one row per task and one square per sample. Green squares passed and red ones failed. Select any square to see the code the model wrote, what the sandbox printed, and why the sample failed.
+
+![Run detail: pass/fail squares for every sample of every task](docs/screenshots/run.png)
+
+| Overview | Compare runs |
+| --- | --- |
+| ![Overview with the new-run form and recent runs](docs/screenshots/overview.png) | ![Two runs compared task by task](docs/screenshots/compare.png) |
+
+The dashboard follows your system's light or dark setting ([dark mode screenshot](docs/screenshots/run-dark.png)). Screenshots use synthetic demo data, not real model results.
+
 ## How it works
 
 ```
