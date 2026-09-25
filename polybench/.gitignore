@@ -1,0 +1,38 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# SQLite
+*.sqlite3
+*.db
+
+# uv
+.uv/
+
+# mypy
+.mypy_cache/
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# report
+report.html
+
+# hypothesis
+.hypothesis/
+
+# SQLite sidecar files
+*.db-shm
+*.db-wal

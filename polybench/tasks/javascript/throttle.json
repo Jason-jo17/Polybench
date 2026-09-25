@@ -1,0 +1,11 @@
+{
+  "id": "javascript/throttle",
+  "language": "javascript",
+  "difficulty": "medium",
+  "title": "Throttle",
+  "prompt": "Implement throttle(fn, limitMs) returning a throttled function: fn is invoked at most once per limitMs window. The first call in each window fires immediately; subsequent calls within the window are ignored (not queued).",
+  "signature": "export function throttle(fn, limitMs) { /* ... */ }",
+  "tags": ["timers", "closures"],
+  "timeout_seconds": 10,
+  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { throttle } from './solution.js';\n\ntest('fires immediately on first call', async () => {\n  let calls = 0;\n  const t = throttle(() => calls++, 100);\n  t();\n  assert.strictEqual(calls, 1);\n});\n\ntest('ignores calls within window', async () => {\n  let calls = 0;\n  const t = throttle(() => calls++, 200);\n  t(); t(); t();\n  assert.strictEqual(calls, 1);\n});\n\ntest('allows call after window expires', async () => {\n  let calls = 0;\n  const t = throttle(() => calls++, 50);\n  t();\n  await new Promise(r => setTimeout(r, 100));\n  t();\n  assert.strictEqual(calls, 2);\n});\n"
+}

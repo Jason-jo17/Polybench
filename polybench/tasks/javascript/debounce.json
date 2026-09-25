@@ -1,0 +1,11 @@
+{
+  "id": "javascript/debounce",
+  "language": "javascript",
+  "difficulty": "medium",
+  "title": "Debounce",
+  "prompt": "Implement debounce(fn, waitMs) returning a debounced function: fn runs only after waitMs has elapsed since the last call. Rapid successive calls reset the timer; only the final call's arguments are used.",
+  "signature": "export function debounce(fn, waitMs) { /* ... */ }",
+  "tags": ["timers", "closures"],
+  "timeout_seconds": 10,
+  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { debounce } from './solution.js';\n\ntest('calls once after burst', async () => {\n  let calls = 0; let lastArg = null;\n  const d = debounce((x) => { calls++; lastArg = x; }, 50);\n  d(1); d(2); d(3);\n  await new Promise(r => setTimeout(r, 120));\n  assert.strictEqual(calls, 1);\n  assert.strictEqual(lastArg, 3);\n});\n"
+}

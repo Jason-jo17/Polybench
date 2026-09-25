@@ -1,0 +1,11 @@
+{
+  "id": "go/stack",
+  "language": "go",
+  "difficulty": "medium",
+  "title": "Integer Stack",
+  "prompt": "Implement a Stack struct with Push(v int), Pop() (int, bool), Peek() (int, bool), and IsEmpty() bool. Pop and Peek return (0, false) when the stack is empty. Package name must be 'solution'.",
+  "signature": "package solution\n\ntype Stack struct { /* ... */ }\nfunc (s *Stack) Push(v int)\nfunc (s *Stack) Pop() (int, bool)\nfunc (s *Stack) Peek() (int, bool)\nfunc (s *Stack) IsEmpty() bool",
+  "tags": ["data-structures", "stacks"],
+  "timeout_seconds": 10,
+  "test_code": "package solution\n\nimport \"testing\"\n\nfunc TestStackBasic(t *testing.T) {\n\ts := &Stack{}\n\tif !s.IsEmpty() { t.Fatal(\"new stack should be empty\") }\n\ts.Push(1); s.Push(2); s.Push(3)\n\tif v, ok := s.Peek(); !ok || v != 3 { t.Fatalf(\"Peek: got %d,%v want 3,true\", v, ok) }\n\tif v, ok := s.Pop(); !ok || v != 3 { t.Fatalf(\"Pop: got %d,%v want 3,true\", v, ok) }\n\tif v, ok := s.Pop(); !ok || v != 2 { t.Fatalf(\"Pop: got %d,%v want 2,true\", v, ok) }\n\tif s.IsEmpty() { t.Fatal(\"stack should still have 1 element\") }\n}\n\nfunc TestStackEmpty(t *testing.T) {\n\ts := &Stack{}\n\tif _, ok := s.Pop(); ok { t.Error(\"Pop on empty should return false\") }\n\tif _, ok := s.Peek(); ok { t.Error(\"Peek on empty should return false\") }\n}\n"
+}

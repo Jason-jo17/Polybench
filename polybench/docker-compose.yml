@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: polybench
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - POLYBENCH_DB=postgresql://user:password@db:5432/polybench
+    volumes:
+      # Expose docker socket for sandbox execution
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount tasks for hot-reloading new tasks
+      - ./tasks:/app/tasks
+    ports:
+      - "8001:8000"
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8001
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

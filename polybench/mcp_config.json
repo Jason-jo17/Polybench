@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "polybench": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "polybench.server"],
+      "cwd": "c:/Polybench/polybench"
+    }
+  }
+}

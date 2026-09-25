@@ -1,0 +1,11 @@
+{
+  "id": "python/word_frequency",
+  "language": "python",
+  "difficulty": "easy",
+  "title": "Word Frequency Counter",
+  "prompt": "Implement word_frequency(text: str) -> dict[str, int] that counts the number of occurrences of each word in text. Words are sequences of alphabetic characters, case-insensitive. Punctuation and whitespace are delimiters.",
+  "signature": "def word_frequency(text: str) -> dict[str, int]: ...",
+  "tags": ["strings", "dictionaries"],
+  "timeout_seconds": 10,
+  "test_code": "from solution import word_frequency\n\ndef test_basic():\n    result = word_frequency('the cat sat on the mat')\n    assert result['the'] == 2\n    assert result['cat'] == 1\n\ndef test_case_insensitive():\n    result = word_frequency('Hello hello HELLO')\n    assert result['hello'] == 3\n\ndef test_punctuation():\n    result = word_frequency('one, two. one!')\n    assert result['one'] == 2\n    assert result['two'] == 1\n\ndef test_empty():\n    assert word_frequency('') == {}\n\ndef test_single_word():\n    assert word_frequency('python') == {'python': 1}\n"
+}

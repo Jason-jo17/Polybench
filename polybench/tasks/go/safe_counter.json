@@ -1,0 +1,11 @@
+{
+  "id": "go/safe_counter",
+  "language": "go",
+  "difficulty": "hard",
+  "title": "Concurrency-Safe Counter",
+  "prompt": "Implement a SafeCounter with Inc() and Value() int that is safe under concurrent use by many goroutines. Package name must be 'solution'.",
+  "signature": "package solution\n\ntype SafeCounter struct { /* ... */ }\nfunc (c *SafeCounter) Inc()\nfunc (c *SafeCounter) Value() int",
+  "tags": ["concurrency", "mutex"],
+  "timeout_seconds": 15,
+  "test_code": "package solution\n\nimport (\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestConcurrentInc(t *testing.T) {\n\tc := &SafeCounter{}\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() { defer wg.Done(); c.Inc() }()\n\t}\n\twg.Wait()\n\tif c.Value() != 1000 {\n\t\tt.Fatalf(\"expected 1000, got %d\", c.Value())\n\t}\n}\n"
+}

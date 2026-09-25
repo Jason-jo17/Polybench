@@ -1,0 +1,11 @@
+{
+  "id": "python/lru_cache",
+  "language": "python",
+  "difficulty": "medium",
+  "title": "LRU Cache",
+  "prompt": "Implement an LRUCache class with a fixed capacity. get(key) returns the value or -1 if absent and marks the key most-recently-used. put(key, value) inserts/updates and evicts the least-recently-used key when over capacity. All operations must be O(1).",
+  "signature": "class LRUCache:\n    def __init__(self, capacity: int) -> None: ...\n    def get(self, key: int) -> int: ...\n    def put(self, key: int, value: int) -> None: ...",
+  "tags": ["data-structures", "design"],
+  "timeout_seconds": 10,
+  "test_code": "from solution import LRUCache\n\ndef test_basic_eviction():\n    c = LRUCache(2)\n    c.put(1, 1); c.put(2, 2)\n    assert c.get(1) == 1\n    c.put(3, 3)            # evicts key 2\n    assert c.get(2) == -1\n    c.put(4, 4)            # evicts key 1\n    assert c.get(1) == -1\n    assert c.get(3) == 3\n    assert c.get(4) == 4\n\ndef test_update_refreshes_recency():\n    c = LRUCache(2)\n    c.put(1, 1); c.put(2, 2)\n    c.put(1, 10)           # refresh key 1\n    c.put(3, 3)            # should evict key 2, not key 1\n    assert c.get(2) == -1\n    assert c.get(1) == 10\n\ndef test_capacity_one_edge():\n    c = LRUCache(1)\n    c.put(1, 1); c.put(2, 2)\n    assert c.get(1) == -1\n    assert c.get(2) == 2\n"
+}

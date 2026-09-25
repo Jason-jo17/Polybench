@@ -1,0 +1,11 @@
+{
+  "id": "javascript/memoize",
+  "language": "javascript",
+  "difficulty": "easy",
+  "title": "Memoize",
+  "prompt": "Implement memoize(fn) that returns a memoized version of fn. The memoized function caches results keyed by the JSON-stringified arguments, so identical calls return the cached result without calling fn again.",
+  "signature": "export function memoize(fn) { /* ... */ }",
+  "tags": ["caching", "closures"],
+  "timeout_seconds": 10,
+  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { memoize } from './solution.js';\n\ntest('returns correct result', () => {\n  const add = memoize((a, b) => a + b);\n  assert.strictEqual(add(1, 2), 3);\n});\n\ntest('caches result — fn called once', () => {\n  let count = 0;\n  const fn = memoize((x) => { count++; return x * 2; });\n  fn(5); fn(5); fn(5);\n  assert.strictEqual(count, 1);\n  assert.strictEqual(fn(5), 10);\n});\n\ntest('separate cache per argument set', () => {\n  let count = 0;\n  const fn = memoize((x) => { count++; return x; });\n  fn(1); fn(2); fn(1);\n  assert.strictEqual(count, 2);\n});\n"
+}

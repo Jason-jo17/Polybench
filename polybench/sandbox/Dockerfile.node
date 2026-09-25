@@ -1,0 +1,4 @@
+﻿FROM node:20-slim
+RUN groupadd -g 10001 sandbox && useradd -u 10001 -g sandbox -s /bin/sh sandbox
+USER sandbox
+WORKDIR /workspace

@@ -1,0 +1,11 @@
+{
+  "id": "python/merge_intervals",
+  "language": "python",
+  "difficulty": "medium",
+  "title": "Merge Intervals",
+  "prompt": "Implement merge_intervals(intervals: list[list[int]]) -> list[list[int]] that merges all overlapping intervals and returns the result sorted by start time. Each interval is [start, end] (inclusive).",
+  "signature": "def merge_intervals(intervals: list[list[int]]) -> list[list[int]]: ...",
+  "tags": ["arrays", "sorting"],
+  "timeout_seconds": 10,
+  "test_code": "from solution import merge_intervals\n\ndef test_basic_merge():\n    assert merge_intervals([[1,3],[2,6],[8,10],[15,18]]) == [[1,6],[8,10],[15,18]]\n\ndef test_touching():\n    assert merge_intervals([[1,4],[4,5]]) == [[1,5]]\n\ndef test_no_overlap():\n    assert merge_intervals([[1,2],[3,4]]) == [[1,2],[3,4]]\n\ndef test_all_overlap():\n    assert merge_intervals([[1,10],[2,5],[3,7]]) == [[1,10]]\n\ndef test_empty():\n    assert merge_intervals([]) == []\n\ndef test_single():\n    assert merge_intervals([[1,5]]) == [[1,5]]\n\ndef test_unsorted_input():\n    assert merge_intervals([[8,10],[1,3],[2,6]]) == [[1,6],[8,10]]\n"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "rust/palindrome",
+  "language": "rust",
+  "difficulty": "easy",
+  "title": "Palindrome Check",
+  "prompt": "Implement a public function `is_palindrome(s: &str) -> bool` that returns true if s reads the same forwards and backwards (case-insensitive, ignoring non-alphanumeric characters). The file must not declare a module.",
+  "signature": "pub fn is_palindrome(s: &str) -> bool { /* ... */ }",
+  "tags": ["strings", "two-pointers"],
+  "timeout_seconds": 15,
+  "test_code": "include!(\"solution.rs\");\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn test_simple() {\n        assert!(is_palindrome(\"racecar\"));\n        assert!(is_palindrome(\"madam\"));\n    }\n\n    #[test]\n    fn test_with_spaces_and_punct() {\n        assert!(is_palindrome(\"A man, a plan, a canal: Panama\"));\n        assert!(is_palindrome(\"Was it a car or a cat I saw?\"));\n    }\n\n    #[test]\n    fn test_not_palindrome() {\n        assert!(!is_palindrome(\"hello\"));\n        assert!(!is_palindrome(\"race a car\"));\n    }\n\n    #[test]\n    fn test_empty() {\n        assert!(is_palindrome(\"\"));\n    }\n}\n"
+}

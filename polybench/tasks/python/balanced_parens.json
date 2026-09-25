@@ -1,0 +1,11 @@
+{
+  "id": "python/balanced_parens",
+  "language": "python",
+  "difficulty": "medium",
+  "title": "Balanced Brackets",
+  "prompt": "Implement is_balanced(s: str) -> bool that returns True if every opening bracket in s has a matching closing bracket in the correct order. Supported pairs: (), [], {}. Other characters should be ignored.",
+  "signature": "def is_balanced(s: str) -> bool: ...",
+  "tags": ["stacks", "strings"],
+  "timeout_seconds": 10,
+  "test_code": "from solution import is_balanced\n\ndef test_simple_parens():\n    assert is_balanced('()')\n\ndef test_nested():\n    assert is_balanced('({[]})')\n\ndef test_with_text():\n    assert is_balanced('func(a[0])')\n\ndef test_unmatched_open():\n    assert not is_balanced('({')\n\ndef test_wrong_order():\n    assert not is_balanced('([)]')\n\ndef test_empty():\n    assert is_balanced('')\n\ndef test_only_text():\n    assert is_balanced('hello world')\n"
+}

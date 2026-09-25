@@ -1,0 +1,25 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install
+        run: uv sync --all-extras --dev
+      - name: Ruff (lint)
+        run: uv run ruff check .
+      - name: Ruff (format check)
+        run: uv run ruff format --check .
+      - name: Mypy (strict)
+        run: uv run mypy src
+      - name: Pytest + coverage gate
+        run: uv run pytest --cov=polybench --cov-report=term-missing --cov-fail-under=90

@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PolyBench Report - {{ run.model }}</title>
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<!-- Prism.js Syntax Highlighting CSS -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+<style>
+  :root {
+    --bg-main: #09090b;
+    --bg-card: #18181b;
+    --bg-card-hover: #202024;
+    --border: #27272a;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --accent: #6366f1;
+    --accent-glow: rgba(99, 102, 241, 0.15);
+    --success: #10b981;
+    --success-bg: rgba(16, 185, 129, 0.1);
+    --error: #ef4444;
+    --error-bg: rgba(239, 68, 68, 0.1);
+    --warn: #f59e0b;
+    --warn-bg: rgba(245, 158, 11, 0.1);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, sans-serif;
+    padding: 2.5rem 1.5rem;
+    line-height: 1.6;
+  }
+
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  header {
+    margin-bottom: 3rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2rem;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+  }
+
+  .title-gradient {
+    font-size: 2.5rem;
+    background: linear-gradient(135deg, #a5b4fc, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+  }
+
+  .meta-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .meta-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+  }
+
+  .meta-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: 'Outfit', sans-serif;
+  }
+
+  .git-sha {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.9rem;
+    color: var(--accent);
+  }
+
+  /* Metric Cards */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .metric-card {
+    background: linear-gradient(145deg, var(--bg-card), #131316);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--accent);
+  }
+
+  .metric-card.success-border::before {
+    background: var(--success);
+  }
+
+  .metric-value {
+    font-size: 2.5rem;
+    font-weight: 800;
+    font-family: 'Outfit', sans-serif;
+    color: var(--text-primary);
+    line-height: 1;
+    margin: 0.5rem 0;
+  }
+
+  /* Visualizations */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
+
+  .chart-card h3 {
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    color: var(--text-primary);
+  }
+
+  .chart-container {
+    position: relative;
+    height: 250px;
+    width: 100%;
+  }
+
+  /* Task List Styling */
+  .section-title {
+    margin-bottom: 1.5rem;
+    font-size: 1.8rem;
+  }
+
+  .task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .task-row {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  }
+
+  .task-header {
+    padding: 1.25rem 1.5rem;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr auto;
+    align-items: center;
+    cursor: pointer;
+    gap: 1rem;
+  }
+
+  .task-header:hover {
+    background-color: var(--bg-card-hover);
+  }
+
+  .task-title {
+    font-weight: 600;
+    font-size: 1.05rem;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    width: fit-content;
+  }
+
+  .badge-lang {
+    background: rgba(99, 102, 241, 0.1);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+  }
+
+  .badge-diff {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+  }
+
+  .badge-diff.easy {
+    background: rgba(16, 185, 129, 0.1);
+    color: #a7f3d0;
+  }
+
+  .badge-diff.medium {
+    background: rgba(245, 158, 11, 0.1);
+    color: #fde68a;
+  }
+
+  .badge-diff.hard {
+    background: rgba(239, 68, 68, 0.1);
+    color: #fca5a5;
+  }
+
+  .pass-badge {
+    background: var(--error-bg);
+    color: var(--error);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+
+  .pass-badge.all-passed {
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+  }
+
+  .pass-badge.some-passed {
+    background: var(--warn-bg);
+    color: var(--warn);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+  }
+
+  .chevron {
+    width: 20px;
+    height: 20px;
+    fill: var(--text-secondary);
+    transition: transform 0.2s ease;
+  }
+
+  .expanded .chevron {
+    transform: rotate(180deg);
+  }
+
+  /* Expanded Content */
+  .task-details {
+    display: none;
+    border-top: 1px solid var(--border);
+    background-color: #111113;
+    padding: 1.5rem;
+  }
+
+  .expanded .task-details {
+    display: block;
+  }
+
+  /* Sample Tabs */
+  .sample-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.75rem;
+  }
+
+  .tab-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+  }
+
+  .tab-btn:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .tab-btn.active {
+    background-color: var(--accent);
+    color: var(--text-primary);
+  }
+
+  .sample-content {
+    display: none;
+  }
+
+  .sample-content.active {
+    display: block;
+  }
+
+  .sample-meta {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .sample-meta-item {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .sample-meta-item strong {
+    color: var(--text-primary);
+  }
+
+  .code-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .code-title {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Custom terminal styling */
+  .terminal-box {
+    background-color: #050506;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    max-height: 250px;
+    margin-bottom: 1rem;
+  }
+
+  .terminal-header {
+    color: #4b5563;
+    font-size: 0.75rem;
+    border-bottom: 1px solid #1f2937;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .stdout-text {
+    color: #e5e7eb;
+  }
+
+  .stderr-text {
+    color: #fca5a5;
+  }
+
+  /* Responsive Adjustments */
+  @media(max-width: 768px) {
+    .task-header {
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+    .task-header > *:nth-child(n+3) {
+      grid-column: span 1;
+    }
+    .chevron {
+      grid-column: span 2;
+      justify-self: center;
+    }
+    .charts-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="meta-label">Benchmark Run Report</div>
+    <h1 class="title-gradient">PolyBench Evaluation</h1>
+    
+    <div class="meta-grid">
+      <div class="meta-item">
+        <div class="meta-label">Benchmark Run ID</div>
+        <div class="meta-value" style="font-family: monospace; font-size: 0.95rem;">{{ run.id }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Evaluation Target Model</div>
+        <div class="meta-value" style="color: #a5b4fc;">{{ run.model }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Provider Service</div>
+        <div class="meta-value">{{ run.provider }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Created Timestamp</div>
+        <div class="meta-value">{{ run.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Git Commit Hash</div>
+        <div class="meta-value git-sha">{{ run.git_sha[:8] if run.git_sha else 'Unknown' }}</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metric Summary Cards -->
+  <div class="metrics-grid">
+    <div class="metric-card success-border">
+      <div class="meta-label">Overall Pass@{{ run.k }} Score</div>
+      <div class="metric-value" style="color: var(--success);">{{ (run.pass_at_k * 100) | round(1) }}%</div>
+      <div class="meta-label">Aggregate rate across all tasks</div>
+    </div>
+    <div class="metric-card">
+      <div class="meta-label">Total Task Problems</div>
+      <div class="metric-value">{{ run.total_tasks }}</div>
+      <div class="meta-label">Unique coding challenges evaluated</div>
+    </div>
+    <div class="metric-card">
+      <div class="meta-label">Samples Per Task</div>
+      <div class="metric-value">{{ run.samples_per_task }}</div>
+      <div class="meta-label">N attempts per task (k={{ run.k }})</div>
+    </div>
+    <div class="metric-card">
+      <div class="meta-label">Temperature Parameter</div>
+      <div class="metric-value">{{ run.temperature }}</div>
+      <div class="meta-label">Creativity setting for LLM</div>
+    </div>
+  </div>
+
+  <!-- Visualizations Section -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Pass Rate (%) by Programming Language</h3>
+      <div class="chart-container">
+        <canvas id="langChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>Pass Rate (%) by Challenge Difficulty</h3>
+      <div class="chart-container">
+        <canvas id="difficultyChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Task Challenges List -->
+  <h2 class="section-title">Challenge Benchmarks Details</h2>
+  
+  <div class="task-list">
+    {% for result in results %}
+    {% set samples_passed_ratio = result.samples_passed / result.samples_generated %}
+    {% set is_full_pass = result.samples_passed == result.samples_generated %}
+    {% set is_fail = result.samples_passed == 0 %}
+    <div class="task-row" id="task-row-{{ result.id }}">
+      <div class="task-header" onclick="toggleExpand('task-row-{{ result.id }}')">
+        <div class="task-title">{{ result.task_id }}</div>
+        <div>
+          <span class="badge badge-lang">{{ result.language }}</span>
+        </div>
+        <div>
+          <span class="badge badge-diff {{ result.difficulty }}">{{ result.difficulty }}</span>
+        </div>
+        <div>
+          <span class="badge pass-badge {% if is_full_pass %}all-passed{% elif not is_fail %}some-passed{% endif %}">
+            {{ result.samples_passed }} / {{ result.samples_generated }} Passed
+          </span>
+        </div>
+        <div style="font-weight: 600; text-align: right; color: var(--accent);">
+          Pass@{{ run.k }}: {{ (result.task_pass_at_k * 100) | round(1) }}%
+        </div>
+        <div>
+          <svg class="chevron" viewBox="0 0 24 24">
+            <path d="M7 10l5 5 5-5H7z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="task-details">
+        <!-- Sandbox Config Banner -->
+        {% if result.sandbox_image or result.sandbox_test_cmd %}
+        <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.25rem; padding:0.75rem 1rem; background:#111827; border:1px solid var(--border); border-radius:10px;">
+          <div class="sample-meta-item" style="font-size:0.8rem;">
+            <span style="color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; font-size:0.7rem;">Docker Image</span><br>
+            <code style="font-family:'Fira Code',monospace; color:#a5b4fc;">{{ result.sandbox_image or '—' }}</code>
+          </div>
+          <div class="sample-meta-item" style="font-size:0.8rem;">
+            <span style="color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.05em; font-size:0.7rem;">Test Command</span><br>
+            <code style="font-family:'Fira Code',monospace; color:#6ee7b7;">{{ result.sandbox_test_cmd or '—' }}</code>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Sample Switcher Tabs -->
+        <div class="sample-tabs">
+          {% for i in range(result.samples_generated) %}
+          {% set sample_item = (samples | selectattr('task_result_id', 'equalto', result.id) | selectattr('sample_index', 'equalto', i) | first) %}
+          <button class="tab-btn {% if i == 0 %}active{% endif %}" onclick="switchSample(this, 's-{{ result.id }}-{{ i }}')">
+            Sample #{{ i + 1 }} {% if sample_item and sample_item.passed %}🟢{% else %}🔴{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+
+        <!-- Sample Details Content panels -->
+        {% for i in range(result.samples_generated) %}
+        {% set sample_item = (samples | selectattr('task_result_id', 'equalto', result.id) | selectattr('sample_index', 'equalto', i) | first) %}
+        <div class="sample-content s-{{ result.id }}-{{ i }} {% if i == 0 %}active{% endif %}">
+          {% if sample_item %}
+          <div class="sample-meta">
+            <div class="sample-meta-item">Status:
+              {% if sample_item.passed %}
+              <strong style="color: var(--success);">PASSED</strong>
+              {% else %}
+              <strong style="color: var(--error);">FAILED ({{ sample_item.failure_kind }})</strong>
+              {% endif %}
+            </div>
+            <div class="sample-meta-item">Runtime: <strong>{{ sample_item.runtime_ms }} ms</strong></div>
+            {% if sample_item.exit_code is not none %}
+            <div class="sample-meta-item">Exit Code: <strong>{{ sample_item.exit_code }}</strong></div>
+            {% endif %}
+            {% if sample_item.input_tokens is not none %}
+            <div class="sample-meta-item">In tokens: <strong>{{ sample_item.input_tokens }}</strong></div>
+            {% endif %}
+            {% if sample_item.output_tokens is not none %}
+            <div class="sample-meta-item">Out tokens: <strong>{{ sample_item.output_tokens }}</strong></div>
+            {% endif %}
+            {% if sample_item.timed_out %}
+            <div class="sample-meta-item" style="color: var(--error);"><strong>TIMED OUT</strong></div>
+            {% endif %}
+          </div>
+
+          {% if sample_item.extracted_code %}
+          <div class="code-section">
+            <div class="code-title">Extracted Execution Code</div>
+            <pre><code class="language-{{ result.language }}">{{ sample_item.extracted_code | e }}</code></pre>
+          </div>
+          {% endif %}
+
+          {% if sample_item.stdout or sample_item.stderr %}
+          <div class="code-title">Sandbox Terminal Console Output</div>
+          <div class="terminal-box">
+            {% if sample_item.stdout %}
+            <div class="terminal-header">Stdout</div>
+            <div class="stdout-text">{{ sample_item.stdout | e }}</div>
+            {% endif %}
+            {% if sample_item.stderr %}
+            <div class="terminal-header" style="margin-top: 0.75rem;">Stderr</div>
+            <div class="stderr-text">{{ sample_item.stderr | e }}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+          
+          <details style="margin-top: 1rem; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem;">
+            <summary style="font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; font-weight: 500;">Raw LLM String Output</summary>
+            <pre style="white-space: pre-wrap; font-family: monospace; font-size: 0.8rem; margin-top: 0.75rem; background: #050506; padding: 0.75rem; border-radius: 6px; color: var(--text-secondary);">{{ sample_item.raw_output | e }}</pre>
+          </details>
+
+          {% else %}
+          <div style="color: var(--error);">Sample detail data missing.</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Chart.js and Prism.js CDN Integration -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<!-- Language Specific Prism Components -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+
+<script>
+  // UI Expand / Collapse Challenge Detail Cards
+  function toggleExpand(rowId) {
+    const row = document.getElementById(rowId);
+    row.classList.toggle('expanded');
+  }
+
+  // Switch between attempts (Samples) within expanded details
+  function switchSample(btn, className) {
+    const container = btn.closest('.task-details');
+    
+    // Deactivate all sibling buttons
+    container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    // Activate target button
+    btn.classList.add('active');
+    
+    // Hide all sibling content panels
+    container.querySelectorAll('.sample-content').forEach(p => p.classList.remove('active'));
+    // Show target content panel
+    const targetPanel = container.querySelector('.' + className);
+    if (targetPanel) {
+      targetPanel.classList.add('active');
+    }
+  }
+
+  // Inject Task Results data for dynamic Chart.js rendering
+  const taskData = [
+    {% for r in results %}
+    { lang: "{{ r.language }}", diff: "{{ r.difficulty }}", score: {{ r.task_pass_at_k }} },
+    {% endfor %}
+  ];
+
+  // Group by language
+  const langGroups = {};
+  taskData.forEach(item => {
+    if (!langGroups[item.lang]) {
+      langGroups[item.lang] = { sum: 0, count: 0 };
+    }
+    langGroups[item.lang].sum += item.score;
+    langGroups[item.lang].count += 1;
+  });
+
+  const langLabels = Object.keys(langGroups);
+  const langValues = langLabels.map(l => (langGroups[l].sum / langGroups[l].count) * 100);
+
+  // Group by difficulty
+  const diffGroups = {};
+  taskData.forEach(item => {
+    if (!diffGroups[item.diff]) {
+      diffGroups[item.diff] = { sum: 0, count: 0 };
+    }
+    diffGroups[item.diff].sum += item.score;
+    diffGroups[item.diff].count += 1;
+  });
+
+  const diffLabels = ['easy', 'medium', 'hard'].filter(d => diffGroups[d] !== undefined);
+  const diffValues = diffLabels.map(d => (diffGroups[d].sum / diffGroups[d].count) * 100);
+
+  // Colors
+  const accentColor = '#6366f1';
+  const successColor = '#10b981';
+  const gridColor = '#27272a';
+  const labelColor = '#a1a1aa';
+
+  // Render Language Chart
+  const ctxLang = document.getElementById('langChart').getContext('2d');
+  new Chart(ctxLang, {
+    type: 'bar',
+    data: {
+      labels: langLabels.map(l => l.toUpperCase()),
+      datasets: [{
+        label: 'Average Pass Rate',
+        data: langValues,
+        backgroundColor: 'rgba(99, 102, 241, 0.4)',
+        borderColor: accentColor,
+        borderWidth: 2,
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          grid: { color: gridColor },
+          ticks: { color: labelColor }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: labelColor }
+        }
+      },
+      plugins: {
+        legend: { display: false }
+      }
+    }
+  });
+
+  // Render Difficulty Chart
+  const ctxDiff = document.getElementById('difficultyChart').getContext('2d');
+  new Chart(ctxDiff, {
+    type: 'bar',
+    data: {
+      labels: diffLabels.map(d => d.toUpperCase()),
+      datasets: [{
+        label: 'Average Pass Rate',
+        data: diffValues,
+        backgroundColor: 'rgba(16, 185, 129, 0.4)',
+        borderColor: successColor,
+        borderWidth: 2,
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          grid: { color: gridColor },
+          ticks: { color: labelColor }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: labelColor }
+        }
+      },
+      plugins: {
+        legend: { display: false }
+      }
+    }
+  });
+</script>
+</body>
+</html>

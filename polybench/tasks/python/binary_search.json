@@ -1,0 +1,11 @@
+{
+  "id": "python/binary_search",
+  "language": "python",
+  "difficulty": "easy",
+  "title": "Binary Search",
+  "prompt": "Implement binary_search(nums: list[int], target: int) -> int that returns the index of target in the sorted list nums, or -1 if it is not present. Must run in O(log n) time.",
+  "signature": "def binary_search(nums: list[int], target: int) -> int: ...",
+  "tags": ["search", "arrays"],
+  "timeout_seconds": 10,
+  "test_code": "from solution import binary_search\n\ndef test_found_middle():\n    assert binary_search([1, 3, 5, 7, 9], 5) == 2\n\ndef test_found_first():\n    assert binary_search([1, 3, 5, 7, 9], 1) == 0\n\ndef test_found_last():\n    assert binary_search([1, 3, 5, 7, 9], 9) == 4\n\ndef test_not_found():\n    assert binary_search([1, 3, 5, 7, 9], 4) == -1\n\ndef test_empty():\n    assert binary_search([], 1) == -1\n\ndef test_single_hit():\n    assert binary_search([42], 42) == 0\n\ndef test_single_miss():\n    assert binary_search([42], 7) == -1\n"
+}

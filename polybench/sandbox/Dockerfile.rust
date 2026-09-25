@@ -1,0 +1,4 @@
+FROM rust:1.79-slim
+RUN useradd -u 10001 -r -s /sbin/nologin sandbox
+USER 10001
+WORKDIR /workspace

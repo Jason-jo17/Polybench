@@ -1,0 +1,11 @@
+{
+  "id": "javascript/deep_clone",
+  "language": "javascript",
+  "difficulty": "medium",
+  "title": "Deep Clone",
+  "prompt": "Implement deepClone(obj) that returns a deep clone of obj. Support plain objects, arrays, numbers, strings, booleans, and null. Do not use JSON.parse(JSON.stringify()) — implement it recursively.",
+  "signature": "export function deepClone(obj) { /* ... */ }",
+  "tags": ["recursion", "objects"],
+  "timeout_seconds": 10,
+  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { deepClone } from './solution.js';\n\ntest('clones primitives', () => {\n  assert.strictEqual(deepClone(42), 42);\n  assert.strictEqual(deepClone('hi'), 'hi');\n  assert.strictEqual(deepClone(null), null);\n});\n\ntest('clones flat object', () => {\n  const obj = { a: 1, b: 'two' };\n  const clone = deepClone(obj);\n  assert.deepStrictEqual(clone, obj);\n  clone.a = 99;\n  assert.strictEqual(obj.a, 1);\n});\n\ntest('clones nested object', () => {\n  const obj = { x: { y: { z: 3 } } };\n  const clone = deepClone(obj);\n  clone.x.y.z = 0;\n  assert.strictEqual(obj.x.y.z, 3);\n});\n\ntest('clones array', () => {\n  const arr = [1, [2, 3], { a: 4 }];\n  const clone = deepClone(arr);\n  clone[1][0] = 99;\n  assert.strictEqual(arr[1][0], 2);\n});\n"
+}
