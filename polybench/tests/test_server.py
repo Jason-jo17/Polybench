@@ -1,9 +1,9 @@
 """Tests for the PolyBench MCP server (server.py)."""
+
 from __future__ import annotations
 
 import io
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -24,6 +24,7 @@ from polybench.server import (
 # ---------------------------------------------------------------------------
 # Framing helpers
 # ---------------------------------------------------------------------------
+
 
 def _frame(obj: dict) -> bytes:
     body = json.dumps(obj).encode("utf-8")
@@ -66,6 +67,7 @@ def test_err_helper():
 # ---------------------------------------------------------------------------
 # _handle router
 # ---------------------------------------------------------------------------
+
 
 def test_handle_initialize():
     req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
@@ -116,18 +118,23 @@ def test_handle_unknown_tool():
 # Tool function unit tests
 # ---------------------------------------------------------------------------
 
+
 def test_tool_list_tasks(tmp_path):
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
-    (tasks_dir / "t.json").write_text(json.dumps({
-        "id": "python/test",
-        "language": "python",
-        "difficulty": "easy",
-        "title": "T",
-        "prompt": "P",
-        "signature": "S",
-        "test_code": "pass",
-    }))
+    (tasks_dir / "t.json").write_text(
+        json.dumps(
+            {
+                "id": "python/test",
+                "language": "python",
+                "difficulty": "easy",
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "pass",
+            }
+        )
+    )
     result = _tool_list_tasks({"tasks_dir": str(tasks_dir)})
     data = json.loads(result)
     assert len(data) == 1
@@ -137,15 +144,19 @@ def test_tool_list_tasks(tmp_path):
 def test_tool_list_tasks_with_filter(tmp_path):
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
-    (tasks_dir / "t.json").write_text(json.dumps({
-        "id": "go/foo",
-        "language": "go",
-        "difficulty": "hard",
-        "title": "T",
-        "prompt": "P",
-        "signature": "S",
-        "test_code": "pass",
-    }))
+    (tasks_dir / "t.json").write_text(
+        json.dumps(
+            {
+                "id": "go/foo",
+                "language": "go",
+                "difficulty": "hard",
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "pass",
+            }
+        )
+    )
     result = _tool_list_tasks({"tasks_dir": str(tasks_dir), "lang": "python"})
     data = json.loads(result)
     assert data == []
@@ -154,15 +165,19 @@ def test_tool_list_tasks_with_filter(tmp_path):
 def test_tool_validate_tasks_ok(tmp_path):
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
-    (tasks_dir / "t.json").write_text(json.dumps({
-        "id": "python/test",
-        "language": "python",
-        "difficulty": "easy",
-        "title": "T",
-        "prompt": "P",
-        "signature": "S",
-        "test_code": "pass",
-    }))
+    (tasks_dir / "t.json").write_text(
+        json.dumps(
+            {
+                "id": "python/test",
+                "language": "python",
+                "difficulty": "easy",
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "pass",
+            }
+        )
+    )
     result = _tool_validate_tasks({"tasks_dir": str(tasks_dir)})
     assert "OK" in result
 
@@ -253,8 +268,13 @@ def test_tool_compare_runs(tmp_db):
 
     def _make_run(model: str) -> str:
         run = BenchmarkRun(
-            model=model, provider="mock", samples_per_task=1, k=1,
-            temperature=0.0, total_tasks=1, pass_at_k=0.0
+            model=model,
+            provider="mock",
+            samples_per_task=1,
+            k=1,
+            temperature=0.0,
+            total_tasks=1,
+            pass_at_k=0.0,
         )
         with get_session() as session:
             session.add(run)
@@ -266,14 +286,28 @@ def test_tool_compare_runs(tmp_db):
     rid_b = _make_run("m-b")
 
     with get_session() as session:
-        session.add(TaskResult(
-            run_id=rid_a, task_id="python/t", language="python", difficulty="easy",
-            samples_generated=2, samples_passed=2, task_pass_at_k=1.0
-        ))
-        session.add(TaskResult(
-            run_id=rid_b, task_id="python/t", language="python", difficulty="easy",
-            samples_generated=2, samples_passed=1, task_pass_at_k=0.5
-        ))
+        session.add(
+            TaskResult(
+                run_id=rid_a,
+                task_id="python/t",
+                language="python",
+                difficulty="easy",
+                samples_generated=2,
+                samples_passed=2,
+                task_pass_at_k=1.0,
+            )
+        )
+        session.add(
+            TaskResult(
+                run_id=rid_b,
+                task_id="python/t",
+                language="python",
+                difficulty="easy",
+                samples_generated=2,
+                samples_passed=1,
+                task_pass_at_k=0.5,
+            )
+        )
         session.commit()
 
     result = _tool_compare_runs({"run_a": rid_a, "run_b": rid_b, "db": str(tmp_db)})
@@ -285,15 +319,19 @@ def test_tool_compare_runs(tmp_db):
 def test_handle_tools_call_list_tasks(tmp_path):
     tasks_dir = tmp_path / "tasks"
     tasks_dir.mkdir()
-    (tasks_dir / "t.json").write_text(json.dumps({
-        "id": "python/test",
-        "language": "python",
-        "difficulty": "easy",
-        "title": "T",
-        "prompt": "P",
-        "signature": "S",
-        "test_code": "pass",
-    }))
+    (tasks_dir / "t.json").write_text(
+        json.dumps(
+            {
+                "id": "python/test",
+                "language": "python",
+                "difficulty": "easy",
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "pass",
+            }
+        )
+    )
     req = {
         "jsonrpc": "2.0",
         "id": 10,

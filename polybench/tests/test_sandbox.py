@@ -1,9 +1,13 @@
 import pytest
 import subprocess
-from unittest.mock import MagicMock, call
-from pathlib import Path
+from unittest.mock import MagicMock
 from polybench.schemas import Task, Language, Difficulty
-from polybench.sandbox.runner import SandboxRunner, SandboxResult, _cleanup_containers, _active_containers
+from polybench.sandbox.runner import (
+    SandboxRunner,
+    _cleanup_containers,
+    _active_containers,
+)
+
 
 def test_sandbox_standard_language(mocker):
     # Mock subprocess.run
@@ -21,7 +25,7 @@ def test_sandbox_standard_language(mocker):
         title="Standard Task",
         prompt="Write print(1)",
         signature="print(1)",
-        test_code="assert True"
+        test_code="assert True",
     )
 
     runner = SandboxRunner()
@@ -43,6 +47,7 @@ def test_sandbox_standard_language(mocker):
     assert "polybench-python:local" in cmd
     assert "test_solution.py" in cmd
 
+
 def test_sandbox_unsupported_language_no_overrides():
     # Use a language with no built-in spec and no task-level overrides.
     task = Task(
@@ -52,7 +57,7 @@ def test_sandbox_unsupported_language_no_overrides():
         title="Unsupported Language",
         prompt="Write COBOL",
         signature="PROCEDURE DIVISION.",
-        test_code="STOP RUN."
+        test_code="STOP RUN.",
     )
 
     runner = SandboxRunner()
@@ -60,6 +65,7 @@ def test_sandbox_unsupported_language_no_overrides():
         runner.run("PROCEDURE DIVISION. STOP RUN.", task)
 
     assert "requires custom sandbox spec fields" in str(excinfo.value)
+
 
 def test_sandbox_custom_language_with_overrides(mocker):
     mock_run = mocker.patch("subprocess.run")
@@ -80,7 +86,7 @@ def test_sandbox_custom_language_with_overrides(mocker):
         image="polybench-rust:local",
         code_file="main.rs",
         test_file="test_main.rs",
-        test_cmd=["cargo", "test"]
+        test_cmd=["cargo", "test"],
     )
 
     runner = SandboxRunner()
@@ -99,12 +105,18 @@ def test_sandbox_custom_language_with_overrides(mocker):
     assert "polybench-rust:local" in cmd
     assert cmd[-2:] == ["cargo", "test"]
 
+
 def test_sandbox_timeout(mocker):
     # Mock subprocess.run to raise TimeoutExpired on the first run, and return success on the kill run
     mock_run = mocker.patch("subprocess.run")
     mock_run.side_effect = [
-        subprocess.TimeoutExpired(cmd=["docker", "run"], timeout=5, output=b"partial stdout", stderr=b"partial stderr"),
-        MagicMock(returncode=0) # docker kill
+        subprocess.TimeoutExpired(
+            cmd=["docker", "run"],
+            timeout=5,
+            output=b"partial stdout",
+            stderr=b"partial stderr",
+        ),
+        MagicMock(returncode=0),  # docker kill
     ]
 
     task = Task(
@@ -115,7 +127,7 @@ def test_sandbox_timeout(mocker):
         prompt="loop forever",
         signature="while True: pass",
         test_code="pass",
-        timeout_seconds=2
+        timeout_seconds=2,
     )
 
     runner = SandboxRunner()
@@ -132,6 +144,7 @@ def test_sandbox_timeout(mocker):
     assert kill_args[0][0] == "docker"
     assert kill_args[0][1] == "kill"
 
+
 def test_cleanup_containers(mocker):
     mock_run = mocker.patch("subprocess.run")
     _active_containers.clear()
@@ -140,4 +153,6 @@ def test_cleanup_containers(mocker):
     _cleanup_containers()
 
     assert len(_active_containers) == 0
-    mock_run.assert_called_once_with(["docker", "kill", "polybench-test-container"], capture_output=True, check=False)
+    mock_run.assert_called_once_with(
+        ["docker", "kill", "polybench-test-container"], capture_output=True, check=False
+    )

@@ -45,7 +45,7 @@ class OpenAICompatibleProvider:
                 model=self._model,
                 messages=[
                     {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 temperature=self._temperature,
             ),
