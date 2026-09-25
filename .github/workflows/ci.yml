@@ -19,7 +19,7 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
       - name: Install
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras --dev --locked
       - name: Ruff (lint)
         run: uv run ruff check .
       - name: Ruff (format check)
@@ -63,7 +63,7 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
       - name: Install
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras --dev --locked
       - name: Validate task files
         run: uv run polybench tasks validate
       - name: Reference solutions pass, bare signatures fail
