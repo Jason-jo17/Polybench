@@ -2,7 +2,7 @@ import concurrent.futures
 import logging
 import subprocess
 import threading
-from sqlmodel import Session
+from sqlmodel import Session, select
 from rich.progress import Progress
 
 from polybench.config import settings
@@ -61,11 +61,25 @@ def create_run(session: Session, cfg: RunConfig, tasks: list[Task]) -> Benchmark
         pass_at_k=0.0,
         status="PENDING",
         git_sha=current_git_sha(),
+        tag_filter=",".join(cfg.tags) if cfg.tags else None,
     )
     session.add(run)
     session.commit()
     session.refresh(run)
     return run
+
+
+def config_from_run(run: BenchmarkRun) -> RunConfig:
+    """Rebuild the RunConfig a stored run was started with, e.g. to resume it."""
+    return RunConfig(
+        model=run.model,
+        provider=run.provider,
+        n=run.samples_per_task,
+        k=run.k,
+        temperature=run.temperature,
+        lang=run.language_filter,
+        tags=[t for t in (run.tag_filter or "").split(",") if t] or None,
+    )
 
 
 def _resolve_sandbox_spec(task: Task) -> tuple[str | None, str | None]:
@@ -87,6 +101,13 @@ def run_benchmark(
     runner: SandboxRunner,
     session: Session,
 ) -> BenchmarkRun | None:
+    """Execute a run, or finish one that was interrupted.
+
+    Samples already stored for this run are kept and skipped, so calling this
+    again after a crash or restart only does the remaining work. Each task's
+    scores are updated as its samples finish, so a run in progress shows real
+    partial results.
+    """
     run_record = session.get(BenchmarkRun, run_id)
     if not run_record:
         _log.error(f"BenchmarkRun {run_id} not found in DB")
@@ -97,31 +118,71 @@ def run_benchmark(
     session.commit()
 
     tasks = sorted(tasks, key=lambda t: t.id)
+    existing = {
+        tr.task_id: tr
+        for tr in session.exec(select(TaskResult).where(TaskResult.run_id == run_id))
+    }
 
-    # Pre-create TaskResult rows so we have IDs before spawning workers.
+    # One TaskResult per task, created up front so workers have its ID.
     task_result_ids: dict[str, str] = {}
+    done: dict[str, set[int]] = {}
+    pass_counts: dict[str, int] = {}
     for task in tasks:
-        sandbox_image, sandbox_test_cmd = _resolve_sandbox_spec(task)
-        tr = TaskResult(
-            run_id=run_record.id,
-            task_id=task.id,
-            language=task.language,
-            difficulty=task.difficulty.value,
-            samples_generated=cfg.n,
-            samples_passed=0,
-            task_pass_at_k=0.0,
-            sandbox_image=sandbox_image,
-            sandbox_test_cmd=sandbox_test_cmd,
-        )
-        session.add(tr)
-        session.commit()
+        tr = existing.get(task.id)
+        if tr is None:
+            sandbox_image, sandbox_test_cmd = _resolve_sandbox_spec(task)
+            tr = TaskResult(
+                run_id=run_record.id,
+                task_id=task.id,
+                language=task.language,
+                difficulty=task.difficulty.value,
+                samples_generated=0,
+                samples_passed=0,
+                task_pass_at_k=0.0,
+                sandbox_image=sandbox_image,
+                sandbox_test_cmd=sandbox_test_cmd,
+            )
+            session.add(tr)
+            session.commit()
         task_result_ids[task.id] = tr.id
+        stored = session.exec(
+            select(Sample).where(Sample.task_result_id == tr.id)
+        ).all()
+        done[task.id] = {smp.sample_index for smp in stored}
+        pass_counts[task.id] = sum(1 for smp in stored if smp.passed)
 
-    # In-memory pass counters — avoids a DB read per sample inside the lock.
-    pass_counts: dict[str, int] = {task.id: 0 for task in tasks}
     db_lock = threading.Lock()
+    jobs = [
+        (task, i, task_result_ids[task.id])
+        for task in tasks
+        for i in range(cfg.n)
+        if i not in done[task.id]
+    ]
+    if len(jobs) < len(tasks) * cfg.n:
+        _log.info(
+            "Resuming run %s: %d of %d samples left",
+            run_id,
+            len(jobs),
+            len(tasks) * cfg.n,
+        )
 
-    jobs = [(task, i, task_result_ids[task.id]) for task in tasks for i in range(cfg.n)]
+    def record_progress(task: Task) -> None:
+        """Write the task's scores so far and the run's running average (holds db_lock)."""
+        tr = session.get(TaskResult, task_result_ids[task.id])
+        if tr is not None:
+            tr.samples_generated = len(done[task.id])
+            tr.samples_passed = pass_counts[task.id]
+            tr.task_pass_at_k = _task_score(
+                len(done[task.id]), pass_counts[task.id], cfg.k
+            )
+            session.add(tr)
+        started = [t for t in tasks if done[t.id]]
+        if started and run_record is not None:
+            run_record.pass_at_k = sum(
+                _task_score(len(done[t.id]), pass_counts[t.id], cfg.k) for t in started
+            ) / len(started)
+            session.add(run_record)
+        session.commit()
 
     with Progress() as progress:
         bar = progress.add_task("[cyan]Running benchmark...", total=len(jobs))
@@ -198,9 +259,10 @@ def run_benchmark(
                     output_tokens=output_tokens,
                 )
                 session.add(sample)
-                session.commit()
+                done[task.id].add(sample_index)
                 if passed:
                     pass_counts[task.id] += 1
+                record_progress(task)
                 progress.advance(bar)
 
         max_workers = max(1, min(settings.polybench_sandbox_workers, len(jobs)))
@@ -213,15 +275,16 @@ def run_benchmark(
                 except Exception as exc:
                     _log.error("Unhandled future exception: %s", exc, exc_info=True)
 
-    # Write final pass counts and pass@k in a single pass over tasks.
+    # Final scores over every task, including samples from before a resume.
     total_pass_at_k = 0.0
     for task in tasks:
-        result_row: TaskResult | None = session.get(
-            TaskResult, task_result_ids[task.id]
-        )
+        result_row = session.get(TaskResult, task_result_ids[task.id])
         if result_row is not None:
+            result_row.samples_generated = len(done[task.id])
             result_row.samples_passed = pass_counts[task.id]
-            result_row.task_pass_at_k = pass_at_k(cfg.n, pass_counts[task.id], cfg.k)
+            result_row.task_pass_at_k = _task_score(
+                len(done[task.id]), pass_counts[task.id], cfg.k
+            )
             session.add(result_row)
             total_pass_at_k += result_row.task_pass_at_k
 
@@ -232,3 +295,10 @@ def run_benchmark(
     session.commit()
 
     return run_record
+
+
+def _task_score(samples_done: int, passed: int, k: int) -> float:
+    """pass@k over the samples finished so far (k is capped at that count)."""
+    if samples_done == 0:
+        return 0.0
+    return pass_at_k(samples_done, passed, min(k, samples_done))

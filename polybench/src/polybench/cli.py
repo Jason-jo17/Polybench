@@ -13,7 +13,7 @@ from rich.table import Table
 from polybench import __version__
 from polybench.config import settings
 from polybench.db import init_db, get_session
-from polybench.engine import RunConfig, create_run, run_benchmark
+from polybench.engine import RunConfig, config_from_run, create_run, run_benchmark
 from polybench.providers.base import LLMProvider
 from polybench.providers.anthropic_provider import AnthropicProvider
 from polybench.providers.mock_provider import MockProvider
@@ -316,6 +316,47 @@ def run(
 
     console.print(f"[green]Run complete! ID: {run_id}[/green]")
     console.print(f"Overall Pass@{k}: {run_pass_at_k:.4f}")
+
+
+@app.command("resume")
+def resume(
+    run_id: str = typer.Argument(..., help="ID of the run to finish"),
+    tasks: Path = typer.Option(
+        Path(settings.polybench_tasks_dir), help="Tasks directory"
+    ),
+    db: str = typer.Option(settings.polybench_db, help="SQLite DB path"),
+) -> None:
+    """Finish a run that was interrupted. Samples it already has are kept."""
+    from polybench.models import BenchmarkRun
+
+    init_db(db)
+    with get_session() as session:
+        run_record = session.get(BenchmarkRun, run_id)
+        if run_record is None:
+            console.print(f"[red]No run with ID {run_id}[/red]")
+            raise typer.Exit(2)
+        if run_record.status == "COMPLETED":
+            console.print(f"Run {run_id} is already complete.")
+            return
+        cfg = config_from_run(run_record)
+
+    _check_api_key(cfg.provider)
+    filtered = TaskRegistry(list(load_tasks(tasks))).filter(
+        lang=cfg.lang, tags=cfg.tags
+    )
+    if not filtered:
+        console.print("[red]None of the run's tasks exist in the tasks directory[/red]")
+        raise typer.Exit(2)
+    _check_docker()
+    _build_images()
+
+    llm = _make_provider(cfg.provider, cfg.model, cfg.temperature)
+    with get_session() as session:
+        finished = run_benchmark(run_id, cfg, filtered, llm, SandboxRunner(), session)
+        if finished is None:
+            raise typer.Exit(1)
+        console.print(f"[green]Run complete! ID: {finished.id}[/green]")
+        console.print(f"Overall Pass@{cfg.k}: {finished.pass_at_k:.4f}")
 
 
 @tasks_app.command("list")

@@ -83,6 +83,7 @@ uv run polybench run --provider mock --model demo -n 3
 uv run polybench run --provider anthropic --model claude-sonnet-4-6 -n 5 -k 1 --lang python
 
 uv run polybench history           # recent runs
+uv run polybench resume RUN_ID     # finish a run that was interrupted (keeps finished samples)
 uv run polybench compare --run-a RUN_A --run-b RUN_B
 uv run polybench report --run-id RUN_ID --out report.html
 ```
@@ -170,6 +171,7 @@ Settings come from environment variables or `polybench/.env`. See [`.env.example
 | `POLYBENCH_DASHBOARD_PASSWORD` | unset | if set, protects the dashboard and API with basic auth |
 | `POLYBENCH_MAX_CONCURRENT_RUNS` | `1` | runs the API will execute at once |
 | `POLYBENCH_SANDBOX_WORKERS` | `4` | samples run in parallel within a run, one container each |
+| `POLYBENCH_RESUME_RUNS` | `true` | when the API restarts, finish interrupted runs instead of marking them failed |
 
 ## Adding tasks
 

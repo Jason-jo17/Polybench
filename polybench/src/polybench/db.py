@@ -2,7 +2,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import Engine, event
+from sqlalchemy import Engine, event, inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 engine: Engine | None = None
@@ -41,6 +41,36 @@ def init_db(db_url: str | None = None) -> None:
         engine.dispose()
     engine = create_engine(db_url)
     SQLModel.metadata.create_all(engine)
+    _add_missing_columns(engine)
+
+
+def _add_missing_columns(db: Engine) -> None:
+    """Add nullable columns introduced after a database was created.
+
+    create_all() makes missing tables but never alters existing ones, so a new
+    optional model field would otherwise break older databases. Only nullable
+    columns can be added this way; anything else needs a real migration.
+    """
+    inspector = inspect(db)
+    with db.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                if not column.nullable:
+                    raise RuntimeError(
+                        f"Column {table.name}.{column.name} is missing from the database "
+                        "and isn't nullable, so it can't be added automatically."
+                    )
+                col_type = column.type.compile(dialect=db.dialect)
+                conn.execute(
+                    text(
+                        f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {col_type}'
+                    )
+                )
 
 
 @contextmanager

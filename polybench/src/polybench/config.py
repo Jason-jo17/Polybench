@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     polybench_max_concurrent_runs: int = 1
     # Samples executed in parallel within one run (one sandbox container each).
     polybench_sandbox_workers: int = 4
+    # Resume runs a restart interrupted, instead of marking them FAILED.
+    polybench_resume_runs: bool = True
     polybench_tasks_dir: str = "./tasks"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

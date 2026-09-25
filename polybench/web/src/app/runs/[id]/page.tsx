@@ -327,7 +327,9 @@ function MatrixRow({
         <span className="m-diff"><Difficulty level={result.difficulty} /></span>
       </span>
       <span className="m-score" role="cell" style={{ textAlign: "right" }}>
-        <Score value={result.task_pass_at_k} digits={0} />
+        {result.samples_generated === 0
+          ? <span className="muted" title="No samples finished yet">—</span>
+          : <Score value={result.task_pass_at_k} digits={0} />}
       </span>
     </div>
   );

@@ -96,7 +96,7 @@ export default function Runs() {
                         </Link>
                       </td>
                       <td><Status status={r.status} /></td>
-                      <td><ScoreMeter value={r.pass_at_k} pending={isActive(r.status)} /></td>
+                      <td><ScoreMeter value={r.pass_at_k} pending={r.status === "PENDING"} /></td>
                       <td className="num">{r.total_tasks}</td>
                       <td className="num muted">{r.samples_per_task} / {r.k}</td>
                       <td className="muted" title={absoluteTime(r.created_at)} style={{ whiteSpace: "nowrap" }}>
