@@ -131,3 +131,31 @@ def test_compare_reports_tasks_missing_from_one_run_as_null(client):
         "run_b": 1.0,
         "delta": None,
     }
+
+
+def test_run_with_unknown_provider_is_rejected(client):
+    res = client.post("/api/runs", json={"provider": "nope", "model": "m"})
+    assert res.status_code == 400
+    assert "Unknown provider" in res.json()["detail"]
+
+
+def test_run_with_missing_key_is_rejected(client, monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    res = client.post("/api/runs", json={"provider": "anthropic", "model": "m"})
+    assert res.status_code == 400
+    assert "ANTHROPIC_API_KEY" in res.json()["detail"]
+
+
+def test_task_list_with_unknown_difficulty_is_400(client):
+    assert client.get("/api/tasks?difficulty=impossible").status_code == 400
+
+
+def test_providers_reflect_configured_keys(client, monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    monkeypatch.setattr(settings, "groq_api_key", "gsk-test")
+    status = client.get("/api/providers/status").json()["providers"]
+    assert status["anthropic"] == {"configured": False, "requires_key": True}
+    assert status["groq"] == {"configured": True, "requires_key": True}
+    assert status["mock"] == {"configured": True, "requires_key": False}
+    listed = client.get("/api/providers").json()["providers"]
+    assert "groq" in listed and "mock" in listed and "anthropic" not in listed

@@ -355,3 +355,175 @@ def test_handle_tools_call_error_propagates(tmp_path):
     resp = _handle(req)
     assert resp is not None
     assert "error" in resp
+
+
+# ---------------------------------------------------------------------------
+# run_benchmark and list_providers (via polybench.core)
+# ---------------------------------------------------------------------------
+
+
+def _write_task(tasks_dir, task_id="python/t", difficulty="easy", tags=("x",)):
+    tasks_dir.mkdir(exist_ok=True)
+    (tasks_dir / f"{task_id.replace('/', '_')}.json").write_text(
+        json.dumps(
+            {
+                "id": task_id,
+                "language": task_id.split("/")[0],
+                "difficulty": difficulty,
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "C",
+                "tags": list(tags),
+            }
+        )
+    )
+
+
+def test_tool_run_benchmark_unknown_provider(tmp_path):
+    from polybench.server import _tool_run_benchmark
+
+    out = _tool_run_benchmark({"model": "m", "provider": "nope"})
+    assert out.startswith("Error: Unknown provider")
+
+
+def test_tool_run_benchmark_missing_key(monkeypatch):
+    from polybench.config import settings
+    from polybench.server import _tool_run_benchmark
+
+    monkeypatch.setattr(settings, "xai_api_key", None)
+    out = _tool_run_benchmark({"model": "grok", "provider": "xai"})
+    assert "XAI_API_KEY not set" in out
+
+
+def test_tool_run_benchmark_no_matching_tasks(tmp_path):
+    from polybench.server import _tool_run_benchmark
+
+    _write_task(tmp_path / "tasks")
+    out = _tool_run_benchmark(
+        {
+            "model": "m",
+            "provider": "mock",
+            "tasks_dir": str(tmp_path / "tasks"),
+            "tags": ["nope"],
+        }
+    )
+    assert out == "Error: No tasks match the given filters."
+
+
+def test_tool_run_benchmark_starts_a_run_with_the_filtered_tasks(
+    tmp_db, tmp_path, mocker
+):
+    from polybench.db import get_session
+    from polybench.models import BenchmarkRun
+    from polybench.server import _tool_run_benchmark
+
+    tasks_dir = tmp_path / "tasks"
+    _write_task(tasks_dir, "python/easy_one", difficulty="easy")
+    _write_task(tasks_dir, "python/hard_one", difficulty="hard")
+    started = []
+
+    class _Thread:
+        def __init__(self, target, args, daemon):
+            assert daemon
+            started.append(args)
+
+        def start(self):
+            pass
+
+    mocker.patch("polybench.server.threading.Thread", _Thread)
+
+    out = _tool_run_benchmark(
+        {
+            "model": "demo",
+            "provider": "mock",
+            "n": 3,
+            "difficulty": "hard",
+            "tasks_dir": str(tasks_dir),
+            "db": str(tmp_db),
+        }
+    )
+
+    assert "started in background" in out
+    ((run_id, plan),) = started
+    assert [t.id for t in plan.tasks] == ["python/hard_one"]
+    assert plan.cfg.n == 3
+    with get_session() as session:
+        run = session.get(BenchmarkRun, run_id)
+        assert run is not None and run.status == "PENDING" and run.total_tasks == 1
+
+
+def test_tool_list_tasks_hides_test_code_and_filters_by_tag(tmp_path):
+    tasks_dir = tmp_path / "tasks"
+    _write_task(tasks_dir, "python/a", tags=("x",))
+    _write_task(tasks_dir, "python/b", tags=("y",))
+    data = json.loads(_tool_list_tasks({"tasks_dir": str(tasks_dir), "tags": ["y"]}))
+    assert [row["id"] for row in data] == ["python/b"]
+    assert "test_code" not in data[0]
+
+
+def test_tool_list_providers(monkeypatch):
+    from polybench.config import settings
+    from polybench.server import _tool_list_providers
+
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    rows = {r["provider"]: r for r in json.loads(_tool_list_providers({}))}
+    assert rows["mock"] == {
+        "provider": "mock",
+        "configured": True,
+        "requires_key": False,
+    }
+    assert rows["openai"]["configured"] is False
+    assert rows["openai"]["requires_key"] is True
+    assert "ollama" in rows
+
+
+def test_tools_list_includes_list_providers():
+    resp = _handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert resp is not None
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert {"list_providers", "run_benchmark"} <= names
+
+
+def test_tool_run_benchmark_reports_provider_setup_failures(mocker):
+    from polybench.server import _tool_run_benchmark
+
+    mocker.patch(
+        "polybench.core.runs.make_provider", side_effect=TypeError("bad client")
+    )
+    out = _tool_run_benchmark({"model": "m", "provider": "mock"})
+    assert out == "Error preparing the run: bad client"
+
+
+def test_main_keeps_other_output_out_of_the_protocol_stream(monkeypatch):
+    import sys
+
+    from polybench import server
+
+    def noisy(args):
+        print("progress bar noise")
+        return "done"
+
+    monkeypatch.setitem(server._TOOL_FNS, "noisy", noisy)
+    request = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {"name": "noisy", "arguments": {}},
+    }
+    stdin = io.TextIOWrapper(io.BytesIO(_frame(request)))
+    stdout_bytes = io.BytesIO()
+    stdout = io.TextIOWrapper(stdout_bytes)
+    stderr = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", stdin)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    server.main()
+
+    stdout_bytes.seek(0)
+    response = _read_message(stdout_bytes)
+    assert response is not None
+    assert response["result"]["content"][0]["text"] == "done"
+    assert stdout_bytes.read() == b""  # nothing after the frame
+    assert "progress bar noise" in stderr.getvalue()

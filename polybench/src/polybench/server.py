@@ -11,18 +11,34 @@ Tools exposed:
   get_run           — fetch a BenchmarkRun record by run_id
   compare_runs      — side-by-side pass@k for two run IDs
   get_task_results  — fetch TaskResult rows for a given run_id
+  list_providers    — which LLM providers are available and configured
   run_benchmark     — start a benchmark run in the background
+
+The tools are thin wrappers over polybench.core, the layer the CLI and the
+HTTP API share, so a run started here behaves exactly like one started there.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+import threading
 import traceback
-from pathlib import Path
 from typing import Any
 
+from polybench.compare import compare_runs
 from polybench.config import PROJECT_ROOT
+from polybench.core import runs as core_runs
+from polybench.core.providers import (
+    ALL_PROVIDERS,
+    CLOUD_PROVIDERS,
+    ProviderError,
+    is_configured,
+)
+from polybench.core.tasks import parse_tags, public_task, select_tasks
+from polybench.db import get_session, init_db
+from polybench.models import BenchmarkRun
+from polybench.tasks.loader import load_tasks
 
 # ---------------------------------------------------------------------------
 # Low-level MCP / LSP framing helpers
@@ -81,55 +97,27 @@ def _require_args(args: dict[str, Any], *keys: str) -> None:
 
 
 def _tool_list_tasks(args: dict[str, Any]) -> str:
-    from polybench.tasks.loader import load_tasks
-    from polybench.tasks.registry import TaskRegistry
-
-    tasks_dir = args.get("tasks_dir", _TASKS_DEFAULT)
-    lang = args.get("lang")
-    difficulty = args.get("difficulty")
-
-    loaded = list(load_tasks(tasks_dir))
-    registry = TaskRegistry(loaded)
-    filtered = registry.filter(lang=lang, difficulty=difficulty)
-
-    rows = [
-        {
-            "id": t.id,
-            "language": t.language,
-            "difficulty": t.difficulty.value,
-            "tags": t.tags,
-        }
-        for t in filtered
-    ]
-    return json.dumps(rows, indent=2)
+    tasks = select_tasks(
+        args.get("tasks_dir", _TASKS_DEFAULT),
+        lang=args.get("lang"),
+        difficulty=args.get("difficulty"),
+        tags=parse_tags(args.get("tags")),
+    )
+    return json.dumps([public_task(t, detail=False) for t in tasks], indent=2)
 
 
 def _tool_validate_tasks(args: dict[str, Any]) -> str:
-    from polybench.tasks.loader import load_tasks
-
-    tasks_dir = args.get("tasks_dir", _TASKS_DEFAULT)
-    errors: list[str] = []
-    count = 0
     try:
-        for task in load_tasks(tasks_dir):
-            count += 1
-            _ = task
+        count = sum(1 for _ in load_tasks(args.get("tasks_dir", _TASKS_DEFAULT)))
     except Exception as exc:
-        errors.append(str(exc))
-
-    if errors:
-        return "VALIDATION FAILED:\n" + "\n".join(errors)
+        return f"VALIDATION FAILED:\n{exc}"
     return f"OK — {count} tasks validated successfully."
 
 
 def _tool_get_run(args: dict[str, Any]) -> str:
-    from polybench.db import init_db, get_session
-    from polybench.models import BenchmarkRun
-
     _require_args(args, "run_id")
     run_id: str = args["run_id"]
-    db = args.get("db", _DB_DEFAULT)
-    init_db(db)
+    init_db(args.get("db", _DB_DEFAULT))
     with get_session() as session:
         run = session.get(BenchmarkRun, run_id)
         if run is None:
@@ -139,6 +127,7 @@ def _tool_get_run(args: dict[str, Any]) -> str:
                 "id": run.id,
                 "model": run.model,
                 "provider": run.provider,
+                "status": run.status,
                 "created_at": str(run.created_at),
                 "total_tasks": run.total_tasks,
                 "samples_per_task": run.samples_per_task,
@@ -153,18 +142,11 @@ def _tool_get_run(args: dict[str, Any]) -> str:
 
 
 def _tool_get_task_results(args: dict[str, Any]) -> str:
-    from polybench.db import init_db, get_session
-    from polybench.models import TaskResult
-    from sqlmodel import select
-
     _require_args(args, "run_id")
     run_id: str = args["run_id"]
-    db = args.get("db", _DB_DEFAULT)
-    init_db(db)
+    init_db(args.get("db", _DB_DEFAULT))
     with get_session() as session:
-        results = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_id)
-        ).all()
+        results = core_runs.task_results(session, run_id)
         if not results:
             return f"No task results for run_id={run_id}"
         rows = [
@@ -184,9 +166,6 @@ def _tool_get_task_results(args: dict[str, Any]) -> str:
 
 
 def _tool_compare_runs(args: dict[str, Any]) -> str:
-    from polybench.compare import compare_runs
-    from polybench.db import init_db, get_session
-
     _require_args(args, "run_a", "run_b")
     init_db(args.get("db", _DB_DEFAULT))
     with get_session() as session:
@@ -194,105 +173,44 @@ def _tool_compare_runs(args: dict[str, Any]) -> str:
     return json.dumps([row.to_dict() for row in rows], indent=2)
 
 
+def _tool_list_providers(args: dict[str, Any]) -> str:
+    rows = [
+        {
+            "provider": p,
+            "configured": is_configured(p),
+            "requires_key": p in CLOUD_PROVIDERS,
+        }
+        for p in ALL_PROVIDERS
+    ]
+    return json.dumps(rows, indent=2)
+
+
 def _tool_run_benchmark(args: dict[str, Any]) -> str:
-    import threading
-    import subprocess
-    from polybench.db import init_db, get_session
-    from polybench.models import BenchmarkRun
-    from polybench.engine import RunConfig
-    from polybench.providers.anthropic_provider import AnthropicProvider
-    from polybench.providers.base import LLMProvider
-    from polybench.providers.mock_provider import MockProvider
-    from polybench.providers.openai_compatible import OpenAICompatibleProvider
-    from polybench.config import settings as _s
-    from polybench.api.worker import execute_benchmark_run
-    from polybench.tasks.loader import load_tasks
-    from polybench.tasks.registry import TaskRegistry
-
     _require_args(args, "model", "provider")
-    db = args.get("db", _DB_DEFAULT)
-    tasks_dir = args.get("tasks_dir", _TASKS_DEFAULT)
-    provider_name: str = args["provider"]
-    model_name: str = args["model"]
-    temperature: float = float(args.get("temperature", 0.2))
-
-    _COMPAT_URLS: dict[str, str] = {
-        "openai": "https://api.openai.com/v1",
-        "groq": "https://api.groq.com/openai/v1",
-        "together": "https://api.together.xyz/v1",
-        "mistral": "https://api.mistral.ai/v1",
-        "deepseek": "https://api.deepseek.com/v1",
-    }
-    provider_impl: LLMProvider
     try:
-        if provider_name == "anthropic":
-            provider_impl = AnthropicProvider(model=model_name, temperature=temperature)
-        elif provider_name == "mock":
-            provider_impl = MockProvider(model=model_name, temperature=temperature)
-        elif provider_name in _COMPAT_URLS:
-            api_key = getattr(_s, f"{provider_name}_api_key", None)
-            if not api_key:
-                return f"Error: Missing API key for provider '{provider_name}'."
-            provider_impl = OpenAICompatibleProvider(
-                api_key=api_key,
-                base_url=_COMPAT_URLS[provider_name],
-                model=model_name,
-                temperature=temperature,
-            )
-        else:
-            return f"Error: Unknown provider '{provider_name}'."
-    except Exception as exc:
-        return f"Error creating provider: {exc}"
-
-    cfg = RunConfig(
-        model=model_name,
-        provider=provider_name,
-        n=int(args.get("n", 5)),
-        k=int(args.get("k", 1)),
-        temperature=temperature,
-        lang=args.get("lang"),
-        tags=args.get("tags"),
-    )
-
-    git_sha: str | None = None
-    try:
-        git_sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-        ).strip()
-    except Exception:
-        pass
-
-    loaded = list(load_tasks(tasks_dir))
-    registry = TaskRegistry(loaded)
-    filtered = registry.filter(lang=cfg.lang, tags=cfg.tags)
-
-    if not filtered:
-        return "Error: No tasks match the given filters."
-
-    init_db(db)
-    with get_session() as session:
-        run_record = BenchmarkRun(
-            model=cfg.model,
-            provider=cfg.provider,
-            language_filter=cfg.lang,
-            samples_per_task=cfg.n,
-            k=cfg.k,
-            temperature=cfg.temperature,
-            total_tasks=len(filtered),
-            pass_at_k=0.0,
-            status="PENDING",
-            git_sha=git_sha,
+        plan = core_runs.plan_run(
+            provider=args["provider"],
+            model=args["model"],
+            tasks_dir=args.get("tasks_dir", _TASKS_DEFAULT),
+            samples=int(args.get("n", 5)),
+            k=int(args.get("k", 1)),
+            temperature=float(args.get("temperature", 0.2)),
+            lang=args.get("lang"),
+            difficulty=args.get("difficulty"),
+            tags=parse_tags(args.get("tags")),
         )
-        session.add(run_record)
-        session.commit()
-        run_id = run_record.id
+    except (ProviderError, core_runs.NoTasksError) as exc:
+        return f"Error: {exc}"
+    except Exception as exc:  # e.g. the provider's client failing to initialise
+        return f"Error preparing the run: {exc}"
 
-    t = threading.Thread(
-        target=execute_benchmark_run, args=(run_id, cfg, provider_impl, Path(tasks_dir))
-    )
-    t.daemon = True
-    t.start()
+    init_db(args.get("db", _DB_DEFAULT))
+    with get_session() as session:
+        run_id = core_runs.start_run(session, plan).id
 
+    threading.Thread(
+        target=core_runs.execute_run, args=(run_id, plan), daemon=True
+    ).start()
     return f"Benchmark run {run_id} started in background. Use get_run or get_task_results to monitor."
 
 
@@ -318,6 +236,11 @@ _TOOLS = [
                 "difficulty": {
                     "type": "string",
                     "description": "Difficulty filter (easy/medium/hard)",
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Only tasks with all of these tags",
                 },
             },
             "required": [],
@@ -375,6 +298,11 @@ _TOOLS = [
         },
     },
     {
+        "name": "list_providers",
+        "description": "List the LLM providers PolyBench supports and whether each is configured.",
+        "inputSchema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
         "name": "run_benchmark",
         "description": "Start a new benchmark run in the background.",
         "inputSchema": {
@@ -386,7 +314,7 @@ _TOOLS = [
                 },
                 "provider": {
                     "type": "string",
-                    "description": "Provider name (e.g. openai, anthropic, mock)",
+                    "description": "Provider name (see list_providers), e.g. anthropic, openai, ollama or mock",
                 },
                 "n": {"type": "integer", "description": "Samples per task (default 5)"},
                 "k": {"type": "integer", "description": "Pass@k parameter (default 1)"},
@@ -395,10 +323,14 @@ _TOOLS = [
                     "description": "Sampling temperature (default 0.2)",
                 },
                 "lang": {"type": "string", "description": "Language filter (optional)"},
+                "difficulty": {
+                    "type": "string",
+                    "description": "Difficulty filter: easy/medium/hard (optional)",
+                },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tags filter (optional)",
+                    "description": "Only tasks with all of these tags (optional)",
                 },
                 "db": {"type": "string", "description": "Path to polybench.db"},
                 "tasks_dir": {
@@ -417,6 +349,7 @@ _TOOL_FNS = {
     "get_run": _tool_get_run,
     "get_task_results": _tool_get_task_results,
     "compare_runs": _tool_compare_runs,
+    "list_providers": _tool_list_providers,
     "run_benchmark": _tool_run_benchmark,
 }
 
@@ -471,6 +404,9 @@ def _handle(req: dict[str, Any]) -> dict[str, Any] | None:
 def main() -> None:
     stdin = sys.stdin.buffer
     stdout = sys.stdout.buffer
+    # stdout carries the protocol, so anything else written there (the engine's
+    # progress bar, a stray print) would corrupt it. Send all of that to stderr.
+    sys.stdout = sys.stderr
     while True:
         try:
             msg = _read_message(stdin)
