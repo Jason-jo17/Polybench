@@ -4,9 +4,9 @@ services:
   db:
     image: postgres:15
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: polybench
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-polybench}
     volumes:
       - pgdata:/var/lib/postgresql/data
 
@@ -15,7 +15,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     environment:
-      - POLYBENCH_DB=postgresql://user:password@db:5432/polybench
+      - POLYBENCH_DB=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-polybench}
     volumes:
       # Expose docker socket for sandbox execution
       - /var/run/docker.sock:/var/run/docker.sock

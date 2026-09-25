@@ -113,6 +113,7 @@ docker compose up -d --build
 ```
 
 This starts Postgres, the API and the dashboard. The dashboard is at http://localhost:3000.
+For deployments, set a strong `POSTGRES_PASSWORD` in `polybench/.env` before starting the services.
 
 ### From an AI agent (MCP)
 
