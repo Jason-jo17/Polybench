@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in PolyBench doesn't work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please check the [open issues](https://github.com/Jason-jo17/Polybench/issues) first in case it's already known.
+        **Found a way for generated code to escape the sandbox?** Don't file it here; see [SECURITY.md](https://github.com/Jason-jo17/Polybench/blob/main/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - CLI (polybench command)
+        - Dashboard
+        - API
+        - Sandbox
+        - MCP server
+        - A benchmark task
+        - Docs or setup
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include the full error message or traceback if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran or the pages you visited. The mock provider (`--provider mock`) makes bugs easiest to reproduce.
+      placeholder: |
+        1. uv run polybench run --provider mock --model demo --lang python -n 1
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: PolyBench commit
+      description: Output of `git rev-parse --short HEAD`
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, Docker version, Node.js version (for the dashboard), and which provider you used.
+      placeholder: "Ubuntu 24.04, Python 3.12.4, Docker 27.1, Node 20.15, provider: anthropic"
