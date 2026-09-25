@@ -159,3 +159,53 @@ def test_providers_reflect_configured_keys(client, monkeypatch):
     assert status["mock"] == {"configured": True, "requires_key": False}
     listed = client.get("/api/providers").json()["providers"]
     assert "groq" in listed and "mock" in listed and "anthropic" not in listed
+
+
+def test_runs_can_include_per_task_scores_without_samples(client):
+    from polybench.db import get_session
+    from polybench.models import Sample, TaskResult
+
+    (run_id,) = _add_runs("a")
+    with get_session() as session:
+        for task_id, score, done in [
+            ("python/b", 0.5, 2),
+            ("go/a", 1.0, 1),
+            ("rust/c", 0.0, 0),
+        ]:
+            tr = TaskResult(
+                run_id=run_id,
+                task_id=task_id,
+                language=task_id.split("/")[0],
+                difficulty="easy",
+                samples_generated=done,
+                samples_passed=int(score * done),
+                task_pass_at_k=score,
+            )
+            session.add(tr)
+            session.commit()
+            session.add(
+                Sample(
+                    task_result_id=tr.id, sample_index=0, raw_output="x", passed=True
+                )
+            )
+        session.commit()
+
+    (run,) = client.get("/api/runs?include=task_scores").json()
+
+    assert run["id"] == run_id
+    assert run["task_scores"] == [
+        {"task_id": "go/a", "pass_at_k": 1.0, "samples_done": 1},
+        {"task_id": "python/b", "pass_at_k": 0.5, "samples_done": 2},
+        {"task_id": "rust/c", "pass_at_k": 0.0, "samples_done": 0},
+    ]
+    assert "samples" not in run
+
+
+def test_runs_without_include_have_no_task_scores(client):
+    _add_runs("a")
+    (run,) = client.get("/api/runs").json()
+    assert "task_scores" not in run
+
+
+def test_runs_reject_unknown_include(client):
+    assert client.get("/api/runs?include=samples").status_code == 400

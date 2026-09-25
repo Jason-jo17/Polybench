@@ -4,6 +4,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sqlmodel import Session, col, func, select
 
@@ -209,6 +210,33 @@ def list_runs(
         stmt.order_by(col(BenchmarkRun.created_at).desc()).offset(offset).limit(limit)
     )
     return list(session.exec(stmt).all())
+
+
+def task_scores(
+    session: Session, run_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Per-task pass@k for several runs in one query, without their samples.
+
+    Each run maps to its tasks in task-ID order, as
+    {"task_id", "pass_at_k", "samples_done"}.
+    """
+    scores: dict[str, list[dict[str, Any]]] = {run_id: [] for run_id in run_ids}
+    if not run_ids:
+        return scores
+    rows = session.exec(
+        select(TaskResult)
+        .where(col(TaskResult.run_id).in_(run_ids))
+        .order_by(col(TaskResult.task_id))
+    ).all()
+    for r in rows:
+        scores[r.run_id].append(
+            {
+                "task_id": r.task_id,
+                "pass_at_k": r.task_pass_at_k,
+                "samples_done": r.samples_generated,
+            }
+        )
+    return scores
 
 
 def task_results(session: Session, run_id: str) -> list[TaskResult]:

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { api, isActive, relativeTime, pct, type Run, type RunResults, type Stats } from "@/lib/api";
+import { api, isActive, relativeTime, pct, type Stats, type RunWithScores } from "@/lib/api";
 import { PageHead, ResultStrip, Score, Skeleton, Status, Empty } from "@/components/ui";
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
@@ -35,7 +35,6 @@ const LANGUAGES = [
 ];
 
 type ProviderStatus = Record<string, { configured: boolean; requires_key: boolean }>;
-type RecentRun = Run & { taskScores?: number[] };
 
 export default function Overview() {
   const router = useRouter();
@@ -50,25 +49,15 @@ export default function Overview() {
   const [submitting, setSubmitting] = useState(false);
 
   const [stats, setStats] = useState<Stats | null>(null);
-  const [recent, setRecent] = useState<RecentRun[] | null>(null);
+  const [recent, setRecent] = useState<RunWithScores[] | null>(null);
   const [providers, setProviders] = useState<ProviderStatus>({});
 
   useEffect(() => {
     api<Stats>("/stats").then(setStats).catch(() => {});
     api<{ providers: ProviderStatus }>("/providers/status").then((d) => setProviders(d.providers)).catch(() => {});
 
-    api<Run[]>("/runs?limit=6")
-      .then(async (runs) => {
-        setRecent(runs);
-        const withScores = await Promise.all(
-          runs.map((r) =>
-            api<RunResults>(`/runs/${r.id}/results`)
-              .then((d) => ({ ...r, taskScores: d.results.map((x) => x.task_pass_at_k) }))
-              .catch(() => r),
-          ),
-        );
-        setRecent(withScores);
-      })
+    api<RunWithScores[]>("/runs?limit=6&include=task_scores")
+      .then(setRecent)
       .catch(() => setRecent([]));
   }, []);
 
@@ -254,7 +243,7 @@ export default function Overview() {
                       <span className="spacer" />
                       {isActive(r.status) ? <Status status={r.status} /> : <Score value={r.pass_at_k} />}
                     </div>
-                    <ResultStrip values={r.taskScores ?? []} total={r.total_tasks} />
+                    <ResultStrip scores={r.task_scores} total={r.total_tasks} />
                     <div className="row sub" style={{ gap: 14 }}>
                       <span>{r.provider}</span>
                       <span>{r.total_tasks} tasks, {r.samples_per_task} samples each</span>

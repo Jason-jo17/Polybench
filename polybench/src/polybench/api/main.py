@@ -144,8 +144,20 @@ def list_runs(
     session: SessionDep,
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-) -> list[BenchmarkRun]:
-    return core_runs.list_runs(session, limit=limit, offset=offset)
+    include: str | None = Query(
+        default=None,
+        description="`task_scores` adds each run's per-task pass@k (no samples).",
+    ),
+) -> list[dict[str, Any]]:
+    runs = core_runs.list_runs(session, limit=limit, offset=offset)
+    rows = [run.model_dump(mode="json") for run in runs]
+    if include == "task_scores":
+        scores = core_runs.task_scores(session, [run.id for run in runs])
+        for row in rows:
+            row["task_scores"] = scores[row["id"]]
+    elif include is not None:
+        raise HTTPException(status_code=400, detail="include must be task_scores")
+    return rows
 
 
 @app.get("/api/runs/compare")

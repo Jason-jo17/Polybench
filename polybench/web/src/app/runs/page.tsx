@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api, absoluteTime, isActive, relativeTime, shortId, type Run, type RunStatus } from "@/lib/api";
-import { Empty, PageHead, ScoreMeter, SkeletonRows, Status } from "@/components/ui";
+import { api, absoluteTime, isActive, relativeTime, shortId, type RunStatus, type RunWithScores } from "@/lib/api";
+import { Empty, PageHead, ResultStrip, ScoreMeter, SkeletonRows, Status } from "@/components/ui";
 
 const PAGE = 25;
 const FILTERS: { value: RunStatus | ""; label: string }[] = [
@@ -16,13 +16,13 @@ const FILTERS: { value: RunStatus | ""; label: string }[] = [
 
 export default function Runs() {
   const router = useRouter();
-  const [runs, setRuns] = useState<Run[] | null>(null);
+  const [runs, setRuns] = useState<RunWithScores[] | null>(null);
   const [error, setError] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const [filter, setFilter] = useState<RunStatus | "">("");
 
   const load = useCallback(() => {
-    api<Run[]>(`/runs?limit=${limit}`)
+    api<RunWithScores[]>(`/runs?limit=${limit}&include=task_scores`)
       .then((d) => { setRuns(d); setError(""); })
       .catch((e: Error) => setError(e.message));
   }, [limit]);
@@ -77,6 +77,7 @@ export default function Runs() {
                   <th>Model</th>
                   <th>Status</th>
                   <th>pass@k</th>
+                  <th>By task</th>
                   <th className="num">Tasks</th>
                   <th className="num">n / k</th>
                   <th>Started</th>
@@ -85,7 +86,7 @@ export default function Runs() {
               </thead>
               <tbody>
                 {runs === null ? (
-                  <SkeletonRows cols={7} />
+                  <SkeletonRows cols={8} />
                 ) : (
                   shown.map((r) => (
                     <tr key={r.id} className="row-link" onClick={() => router.push(`/runs/${r.id}`)}>
@@ -97,6 +98,7 @@ export default function Runs() {
                       </td>
                       <td><Status status={r.status} /></td>
                       <td><ScoreMeter value={r.pass_at_k} pending={r.status === "PENDING"} /></td>
+                      <td><ResultStrip scores={r.task_scores} total={r.total_tasks} /></td>
                       <td className="num">{r.total_tasks}</td>
                       <td className="num muted">{r.samples_per_task} / {r.k}</td>
                       <td className="muted" title={absoluteTime(r.created_at)} style={{ whiteSpace: "nowrap" }}>
