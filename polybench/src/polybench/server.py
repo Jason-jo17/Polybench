@@ -47,7 +47,8 @@ def _read_message(stream: Any) -> dict[str, Any] | None:
     if length == 0:
         return None
     body = stream.read(length)
-    return json.loads(body.decode("utf-8"))  # type: ignore[no-any-return]
+    message: dict[str, Any] = json.loads(body.decode("utf-8"))
+    return message
 
 
 def _write_message(stream: Any, obj: dict[str, Any]) -> None:
@@ -221,6 +222,7 @@ def _tool_run_benchmark(args: dict[str, Any]) -> str:
     from polybench.models import BenchmarkRun
     from polybench.engine import RunConfig
     from polybench.providers.anthropic_provider import AnthropicProvider
+    from polybench.providers.base import LLMProvider
     from polybench.providers.mock_provider import MockProvider
     from polybench.providers.openai_compatible import OpenAICompatibleProvider
     from polybench.config import settings as _s
@@ -242,6 +244,7 @@ def _tool_run_benchmark(args: dict[str, Any]) -> str:
         "mistral": "https://api.mistral.ai/v1",
         "deepseek": "https://api.deepseek.com/v1",
     }
+    provider_impl: LLMProvider
     try:
         if provider_name == "anthropic":
             provider_impl = AnthropicProvider(model=model_name, temperature=temperature)

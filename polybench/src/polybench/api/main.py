@@ -6,7 +6,7 @@ import os
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlmodel import select
+from sqlmodel import col, select
 
 from polybench.api.deps import SessionDep, verify_password
 from polybench.api.worker import execute_benchmark_run
@@ -15,6 +15,7 @@ from polybench.db import init_db
 from polybench.engine import RunConfig, create_run
 from polybench.models import BenchmarkRun, TaskResult, Sample
 from polybench.providers.anthropic_provider import AnthropicProvider
+from polybench.providers.base import LLMProvider
 from polybench.providers.mock_provider import MockProvider
 from polybench.providers.openai_compatible import OpenAICompatibleProvider
 from polybench.tasks.loader import load_tasks
@@ -36,7 +37,7 @@ _COMPAT_BASE_URLS: dict[str, str] = {
 }
 
 
-def _make_provider(provider: str, model: str, temperature: float):
+def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider:
     if provider == "anthropic":
         return AnthropicProvider(model=model, temperature=temperature)
     if provider == "mock":
@@ -91,7 +92,7 @@ logging.basicConfig(
 
 
 @app.on_event("startup")
-def on_startup():
+def on_startup() -> None:
     init_db()
 
     # Cleanup orphaned runs from previous server instance
@@ -99,7 +100,9 @@ def on_startup():
 
     with get_session() as session:
         orphans = session.exec(
-            select(BenchmarkRun).where(BenchmarkRun.status.in_(["PENDING", "RUNNING"]))
+            select(BenchmarkRun).where(
+                col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
+            )
         ).all()
         for run in orphans:
             run.status = "FAILED"
@@ -119,10 +122,14 @@ class RunRequest(BaseModel):
 
 
 @app.post("/api/runs")
-def start_run(req: RunRequest, background_tasks: BackgroundTasks, session: SessionDep):
+def start_run(
+    req: RunRequest, background_tasks: BackgroundTasks, session: SessionDep
+) -> dict[str, str]:
     active_runs = len(
         session.exec(
-            select(BenchmarkRun).where(BenchmarkRun.status.in_(["PENDING", "RUNNING"]))
+            select(BenchmarkRun).where(
+                col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
+            )
         ).all()
     )
     if active_runs >= settings.polybench_max_concurrent_runs:
@@ -207,11 +214,11 @@ def list_runs(
 ) -> list[BenchmarkRun]:
     stmt = (
         select(BenchmarkRun)
-        .order_by(BenchmarkRun.created_at.desc())  # type: ignore
+        .order_by(col(BenchmarkRun.created_at).desc())
         .offset(offset)
         .limit(limit)
     )
-    return session.exec(stmt).all()
+    return list(session.exec(stmt).all())
 
 
 @app.get("/api/runs/compare")
@@ -261,12 +268,12 @@ def get_run_status(run_id: str, session: SessionDep) -> dict[str, Any]:
 
 
 @app.get("/api/health")
-def health_check():
+def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/api/providers")
-def list_providers():
+def list_providers() -> dict[str, list[str]]:
     configured = ["mock", "ollama", "lmstudio", "anthropic"]
     for p in _COMPAT_BASE_URLS:
         if getattr(settings, f"{p}_api_key", None):
@@ -278,7 +285,7 @@ def list_providers():
 def list_tasks(
     lang: str | None = None,
     difficulty: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     from polybench.schemas import Difficulty as DifficultyEnum
 
     loaded = list(load_tasks(_TASKS_DEFAULT))
@@ -301,7 +308,7 @@ def list_tasks(
 
 
 @app.get("/api/tasks/{task_id:path}")
-def get_task(task_id: str) -> dict:
+def get_task(task_id: str) -> dict[str, Any]:
     """Fetch a single task by its ID (e.g. python/lru_cache)."""
     loaded = list(load_tasks(_TASKS_DEFAULT))
     for t in loaded:
@@ -331,7 +338,7 @@ def get_run(run_id: str, session: SessionDep) -> BenchmarkRun:
 @app.get("/api/providers/status")
 def providers_status() -> dict[str, Any]:
     """Report which providers have API keys configured."""
-    status: dict[str, dict] = {}
+    status: dict[str, dict[str, bool]] = {}
     always_available = ["mock", "ollama", "lmstudio"]
     for p in always_available:
         status[p] = {"configured": True, "requires_key": False}

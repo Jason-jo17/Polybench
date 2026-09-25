@@ -47,3 +47,49 @@ def test_password_protects_the_api_when_set(client, monkeypatch):
     assert client.get("/api/stats").status_code == 401
     assert client.get("/api/stats", auth=("anyone", "wrong")).status_code == 401
     assert client.get("/api/stats", auth=("anyone", "s3cret")).status_code == 200
+
+
+def _add_runs(*models: str) -> list[str]:
+    """Insert completed runs, oldest first, and return their IDs."""
+    from datetime import datetime, timedelta
+
+    from polybench.db import get_session
+    from polybench.models import BenchmarkRun
+
+    ids = []
+    with get_session() as session:
+        for i, model in enumerate(models):
+            run = BenchmarkRun(
+                model=model,
+                provider="mock",
+                samples_per_task=1,
+                k=1,
+                temperature=0.2,
+                total_tasks=1,
+                pass_at_k=0.5,
+                status="COMPLETED",
+                created_at=datetime(2026, 1, 1) + timedelta(hours=i),
+            )
+            session.add(run)
+            session.commit()
+            ids.append(run.id)
+    return ids
+
+
+def test_runs_are_listed_newest_first_with_paging(client):
+    _add_runs("first", "second", "third")
+
+    assert [r["model"] for r in client.get("/api/runs").json()] == [
+        "third",
+        "second",
+        "first",
+    ]
+    page = client.get("/api/runs?limit=1&offset=1").json()
+    assert [r["model"] for r in page] == ["second"]
+
+
+def test_stats_count_runs(client):
+    _add_runs("a", "b")
+    stats = client.get("/api/stats").json()
+    assert stats["total_runs"] == 2 and stats["completed_runs"] == 2
+    assert stats["avg_pass_at_k"] == 0.5

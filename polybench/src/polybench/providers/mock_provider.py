@@ -40,7 +40,9 @@ def _known_tasks() -> tuple[Task, ...]:
 def _task_for(prompt: str) -> Task | None:
     """The task whose signature appears in the prompt the engine built."""
     matches = [t for t in _known_tasks() if t.signature and t.signature in prompt]
-    return max(matches, key=lambda t: len(t.signature), default=None)
+    if not matches:
+        return None
+    return max(matches, key=lambda t: len(t.signature))
 
 
 def _pass_rate(model: str) -> int:
