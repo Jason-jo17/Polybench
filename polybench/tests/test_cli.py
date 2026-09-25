@@ -159,7 +159,7 @@ def test_cli_run_dry_run(sample_task_json):
 
 
 def test_cli_run_docker_unavailable(mocker, sample_task_json, tmp_db):
-    mocker.patch("subprocess.run", side_effect=Exception("docker not found"))
+    mocker.patch("subprocess.run", side_effect=FileNotFoundError("docker"))
     res = runner.invoke(
         app,
         [
@@ -570,7 +570,7 @@ def _docker_images(mocker, labels: dict[str, str | None], build_rc: int = 0):
             return MagicMock(returncode=build_rc)
         raise AssertionError(cmd)
 
-    mocker.patch("polybench.cli.subprocess.run", side_effect=fake_run)
+    mocker.patch("polybench.sandbox.images.subprocess.run", side_effect=fake_run)
     return built
 
 
@@ -579,6 +579,8 @@ def test_build_images_skips_up_to_date_and_rebuilds_changed(mocker):
 
     from polybench.cli import _build_images
     from polybench.config import PROJECT_ROOT
+
+    mocker.patch("polybench.cli.console")
 
     def sha(name):
         return hashlib.sha256(

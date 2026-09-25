@@ -3,7 +3,6 @@ import csv
 import io
 import json
 import logging
-import hashlib
 import subprocess
 from pathlib import Path
 
@@ -12,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from polybench import __version__
-from polybench.config import PROJECT_ROOT, settings
+from polybench.config import settings
 from polybench.db import init_db, get_session
 from polybench.engine import RunConfig, create_run, run_benchmark
 from polybench.providers.base import LLMProvider
@@ -20,6 +19,7 @@ from polybench.providers.anthropic_provider import AnthropicProvider
 from polybench.providers.mock_provider import MockProvider
 from polybench.providers.openai_compatible import OpenAICompatibleProvider
 from polybench.report.html import generate_report
+from polybench.sandbox.images import ImageBuildError, docker_available, ensure_images
 from polybench.sandbox.runner import SandboxRunner
 from polybench.schemas import Difficulty, Language, Task
 from polybench.tasks.loader import load_tasks
@@ -148,69 +148,20 @@ def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider
 
 
 def _check_docker() -> None:
-    try:
-        subprocess.run(["docker", "info"], check=True, capture_output=True)
-    except Exception:
+    if not docker_available():
         console.print("[red]Docker unavailable[/red]")
         raise typer.Exit(4)
 
 
-_IMAGE_LABEL = "polybench.dockerfile-sha256"
-
-
-def _image_label(tag: str) -> str | None:
-    """The Dockerfile hash an existing image was built from, or None if it's missing."""
-    res = subprocess.run(
-        [
-            "docker",
-            "image",
-            "inspect",
-            "--format",
-            f'{{{{ index .Config.Labels "{_IMAGE_LABEL}" }}}}',
-            tag,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    return res.stdout.strip() if res.returncode == 0 else None
-
-
 def _build_images() -> None:
-    """Build each sandbox image that is missing or older than its Dockerfile."""
-    images = {
-        "polybench-python:local": "Dockerfile.python",
-        "polybench-node:local": "Dockerfile.node",
-        "polybench-go:local": "Dockerfile.go",
-        "polybench-rust:local": "Dockerfile.rust",
-    }
-    sandbox_dir = PROJECT_ROOT / "sandbox"
-    for tag, dockerfile in images.items():
-        path = sandbox_dir / dockerfile
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        current = _image_label(tag)
-        if current == digest:
-            continue
-        action = "Building" if current is None else "Rebuilding (Dockerfile changed)"
-        console.print(f"[yellow]{action} {tag}…[/yellow]")
-        build = subprocess.run(
-            [
-                "docker",
-                "build",
-                "-t",
-                tag,
-                "--label",
-                f"{_IMAGE_LABEL}={digest}",
-                "-f",
-                str(path),
-                str(sandbox_dir),
-            ],
+    """Build any missing or outdated sandbox image, showing Docker's output."""
+    try:
+        ensure_images(
+            lambda msg: console.print(f"[yellow]{msg}[/yellow]"), stream_output=True
         )
-        if build.returncode != 0:
-            console.print(
-                f"[red]Couldn't build {tag} from {path}. See the Docker output above.[/red]"
-            )
-            raise typer.Exit(1)
-        console.print(f"[green]Built {tag}[/green]")
+    except ImageBuildError as exc:
+        console.print(f"[red]{exc} See the Docker output above.[/red]")
+        raise typer.Exit(1)
 
 
 def _setup_logging(log_file: Path | None) -> None:

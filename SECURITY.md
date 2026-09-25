@@ -23,7 +23,8 @@ You can expect an acknowledgement within a week. Once a fix is available, you'll
 
 ## What's out of scope
 
-- Default development credentials in `docker-compose.yml` (tracked publicly in [#18](https://github.com/Jason-jo17/Polybench/issues/18)).
+- The default Postgres password in `docker-compose.yml`, which is meant for local use. Set `POSTGRES_PASSWORD` for anything else.
+- Access to the host's Docker socket, which the Compose stack needs by design to start sandbox containers. See the Docker Compose section of the README.
 - Attacks that require someone who already controls the host or the `.env` file.
 - Models scoring well by gaming weak tests. That's a benchmark-quality problem, so open a normal issue.
 

@@ -1,4 +1,9 @@
-version: '3.8'
+# Full stack: Postgres, the API (which starts sandbox containers through the
+# host's Docker socket) and the dashboard at http://localhost:3000.
+#
+# Settings come from .env in this directory, if it exists: provider API keys,
+# POLYBENCH_DASHBOARD_PASSWORD, and the POSTGRES_* credentials. The defaults
+# below are for local use; set a real POSTGRES_PASSWORD anywhere else.
 
 services:
   db:
@@ -9,29 +14,42 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-polybench}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      retries: 20
 
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - POLYBENCH_DB=postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-polybench}
+      POLYBENCH_DB: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@db:5432/${POSTGRES_DB:-polybench}
     volumes:
-      # Expose docker socket for sandbox execution
+      # Sandbox containers run on the host's Docker. Access to this socket is
+      # equivalent to root on the host, so only run this stack on a machine you
+      # trust it with.
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mount tasks for hot-reloading new tasks
-      - ./tasks:/app/tasks
+      # Edit tasks without rebuilding the image.
+      - ./tasks:/app/tasks:ro
     ports:
       - "8001:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      args:
+        POLYBENCH_API_URL: http://backend:8000
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "3000:3000"
     depends_on:
