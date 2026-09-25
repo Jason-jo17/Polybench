@@ -509,13 +509,15 @@ def history(
 ) -> None:
     """List past benchmark runs."""
     from polybench.models import BenchmarkRun
-    from sqlmodel import select
+    from sqlmodel import col, select
 
     init_db(db)
     with get_session() as session:
         stmt = (
-            select(BenchmarkRun).order_by(BenchmarkRun.created_at.desc()).limit(limit)
-        )  # type: ignore[attr-defined]
+            select(BenchmarkRun)
+            .order_by(col(BenchmarkRun.created_at).desc())
+            .limit(limit)
+        )
         runs = session.exec(stmt).all()
 
     if not runs:
@@ -751,7 +753,7 @@ def health(
     try:
         init_db(db)
         with get_session() as session:
-            count = session.exec(select(func.count()).select_from(BenchmarkRun)).one()  # type: ignore[call-overload]
+            count = session.exec(select(func.count()).select_from(BenchmarkRun)).one()
         console.print(f"[green]DB[/green]       OK — {count} run(s) at {db}")
     except Exception as exc:
         console.print(f"[red]DB[/red]       ERROR — {exc}")

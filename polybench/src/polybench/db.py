@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any
 
 from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine
@@ -8,11 +9,11 @@ engine: Engine | None = None
 
 
 @event.listens_for(Engine, "connect")
-def _set_sqlite_pragmas(dbapi_connection: object, connection_record: object) -> None:
+def _set_sqlite_pragmas(dbapi_connection: Any, connection_record: Any) -> None:
     """Enable FK enforcement and WAL mode on every new SQLite connection."""
     if engine and engine.dialect.name != "sqlite":
         return
-    cursor = dbapi_connection.cursor()  # type: ignore[union-attr]
+    cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.close()

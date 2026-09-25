@@ -16,7 +16,7 @@ security = HTTPBasic(auto_error=False)
 
 def verify_password(
     credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
-):
+) -> bool:
     if not settings.polybench_dashboard_password:
         return True
 
