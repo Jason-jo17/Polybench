@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +74,33 @@ def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider
     raise ValueError(f"Unknown provider: {provider}")
 
 
-app = FastAPI(title="PolyBench API", dependencies=[Depends(verify_password)])
+def _mark_orphaned_runs_failed() -> None:
+    """Runs left PENDING or RUNNING by a previous server process can't finish."""
+    from polybench.db import get_session
+
+    with get_session() as session:
+        orphans = session.exec(
+            select(BenchmarkRun).where(
+                col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
+            )
+        ).all()
+        for run in orphans:
+            run.status = "FAILED"
+        if orphans:
+            session.commit()
+            logging.info(f"Marked {len(orphans)} orphaned runs as FAILED.")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    _mark_orphaned_runs_failed()
+    yield
+
+
+app = FastAPI(
+    title="PolyBench API", dependencies=[Depends(verify_password)], lifespan=lifespan
+)
 
 # CORS Configuration
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -90,26 +118,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
-
-    # Cleanup orphaned runs from previous server instance
-    from polybench.db import get_session
-
-    with get_session() as session:
-        orphans = session.exec(
-            select(BenchmarkRun).where(
-                col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
-            )
-        ).all()
-        for run in orphans:
-            run.status = "FAILED"
-        if orphans:
-            session.commit()
-            logging.info(f"Marked {len(orphans)} orphaned runs as FAILED.")
 
 
 class RunRequest(BaseModel):

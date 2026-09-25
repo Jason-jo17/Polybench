@@ -1,0 +1,5 @@
+# Keep LF line endings on every platform. Dockerfiles and shell scripts run in
+# Linux containers, where CRLF line endings break them.
+* text=auto eol=lf
+*.png binary
+*.ico binary
