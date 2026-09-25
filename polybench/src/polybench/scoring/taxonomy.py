@@ -40,6 +40,8 @@ def classify(
         "cannot use",
         "declared and not used",
         "imported and not used",
+        "has no field or method",
+        "[solution.test]",  # header `go test -c` prints before any compile error
         # Rust
         "error[E",
         "error: aborting",
@@ -48,6 +50,20 @@ def classify(
         "syntax error",
     )
     if any(sig in stderr for sig in _compile_signals):
+        return FailureKind.COMPILE_ERROR
+    # Test runners report these on stdout (pytest collection errors, Node's TAP
+    # output, `go test` build failures). Only unambiguous signals are used here,
+    # because test failure messages also go to stdout. A missing required name
+    # means the code doesn't match the signature, so it counts as not compiling.
+    _compile_signals_stdout = (
+        "SyntaxError",
+        "[build failed]",
+        "error[E",
+        "cannot import name",
+        "does not provide an export named",
+        "SyntaxError: Named export",
+    )
+    if any(sig in stdout for sig in _compile_signals_stdout):
         return FailureKind.COMPILE_ERROR
 
     # --- Security / sandbox violations ---

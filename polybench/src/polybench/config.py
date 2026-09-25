@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     polybench_default_model: str = "claude-sonnet-4-6"
     polybench_dashboard_password: Optional[str] = None
     polybench_max_concurrent_runs: int = 1
+    # Samples executed in parallel within one run (one sandbox container each).
+    polybench_sandbox_workers: int = 4
     polybench_tasks_dir: str = "./tasks"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

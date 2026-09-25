@@ -153,6 +153,7 @@ Settings come from environment variables or `polybench/.env`. See [`.env.example
 | `POLYBENCH_DEFAULT_MODEL` | `claude-sonnet-4-6` | model used when `--model` is omitted |
 | `POLYBENCH_DASHBOARD_PASSWORD` | unset | if set, protects the dashboard and API with basic auth |
 | `POLYBENCH_MAX_CONCURRENT_RUNS` | `1` | runs the API will execute at once |
+| `POLYBENCH_SANDBOX_WORKERS` | `4` | samples run in parallel within a run, one container each |
 
 ## Adding tasks
 

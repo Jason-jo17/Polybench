@@ -32,6 +32,12 @@ def init_db(db_url: str | None = None) -> None:
         # if they passed a bare path, assume sqlite
         db_url = f"sqlite:///{db_url}"
 
+    # Register the table models on SQLModel.metadata; create_all only creates
+    # tables for models that have been imported.
+    import polybench.models  # noqa: F401
+
+    if engine is not None:
+        engine.dispose()
     engine = create_engine(db_url)
     SQLModel.metadata.create_all(engine)
 

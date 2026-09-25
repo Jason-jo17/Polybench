@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import logging
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -152,7 +153,28 @@ def _check_docker() -> None:
         raise typer.Exit(4)
 
 
+_IMAGE_LABEL = "polybench.dockerfile-sha256"
+
+
+def _image_label(tag: str) -> str | None:
+    """The Dockerfile hash an existing image was built from, or None if it's missing."""
+    res = subprocess.run(
+        [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            f'{{{{ index .Config.Labels "{_IMAGE_LABEL}" }}}}',
+            tag,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    return res.stdout.strip() if res.returncode == 0 else None
+
+
 def _build_images() -> None:
+    """Build each sandbox image that is missing or older than its Dockerfile."""
     images = {
         "polybench-python:local": "Dockerfile.python",
         "polybench-node:local": "Dockerfile.node",
@@ -161,27 +183,32 @@ def _build_images() -> None:
     }
     sandbox_dir = PROJECT_ROOT / "sandbox"
     for tag, dockerfile in images.items():
-        res = subprocess.run(["docker", "image", "inspect", tag], capture_output=True)
-        if res.returncode != 0:
-            console.print(f"[yellow]Building {tag}…[/yellow]")
-            build = subprocess.run(
-                [
-                    "docker",
-                    "build",
-                    "-t",
-                    tag,
-                    "-f",
-                    str(sandbox_dir / dockerfile),
-                    str(sandbox_dir),
-                ],
+        path = sandbox_dir / dockerfile
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        current = _image_label(tag)
+        if current == digest:
+            continue
+        action = "Building" if current is None else "Rebuilding (Dockerfile changed)"
+        console.print(f"[yellow]{action} {tag}…[/yellow]")
+        build = subprocess.run(
+            [
+                "docker",
+                "build",
+                "-t",
+                tag,
+                "--label",
+                f"{_IMAGE_LABEL}={digest}",
+                "-f",
+                str(path),
+                str(sandbox_dir),
+            ],
+        )
+        if build.returncode != 0:
+            console.print(
+                f"[red]Couldn't build {tag} from {path}. See the Docker output above.[/red]"
             )
-            if build.returncode != 0:
-                console.print(
-                    f"[red]Couldn't build {tag} from {sandbox_dir / dockerfile}. "
-                    "See the Docker output above.[/red]"
-                )
-                raise typer.Exit(1)
-            console.print(f"[green]Built {tag}[/green]")
+            raise typer.Exit(1)
+        console.print(f"[green]Built {tag}[/green]")
 
 
 def _setup_logging(log_file: Path | None) -> None:
