@@ -226,7 +226,7 @@ Contributions are welcome, whether that's fixing a bug, adding a benchmark task 
 - **How to contribute:** setup, checks and pull request guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Security problems** such as sandbox escapes: report privately, as described in [SECURITY.md](SECURITY.md).
 
-**Project status:** early. The core pipeline works, but CI currently fails on lint, type checks and coverage, and `polybench run` has a known crash ([#3](https://github.com/Jason-jo17/Polybench/issues/3)). Fixing these is the top priority in the start-here issue.
+**Project status:** the pipeline works end to end in all four languages, from the CLI, the dashboard, Docker Compose and MCP. Lint, strict type checks, the test suite (over 90% coverage) and `polybench tasks verify` all pass. The most useful contribution right now is more benchmark tasks ([#15](https://github.com/Jason-jo17/Polybench/issues/15)).
 
 ## License
 
