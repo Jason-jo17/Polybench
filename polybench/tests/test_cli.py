@@ -524,7 +524,7 @@ def test_cli_compass_anthropic_pass(mocker):
     mocker.patch("polybench.cli.settings.openai_api_key", None)
     mock_prov = MagicMock()
     mock_prov.generate.return_value = MagicMock(raw_output="OK", runtime_ms=42)
-    mocker.patch("polybench.cli.AnthropicProvider", return_value=mock_prov)
+    mocker.patch("polybench.core.providers.AnthropicProvider", return_value=mock_prov)
     res = runner.invoke(app, ["compass"])
     assert res.exit_code == 0
     assert "PASS" in res.stdout
@@ -535,7 +535,7 @@ def test_cli_compass_provider_fail(mocker):
     mocker.patch("polybench.cli.settings.openai_api_key", None)
     mock_prov = MagicMock()
     mock_prov.generate.side_effect = Exception("auth error")
-    mocker.patch("polybench.cli.AnthropicProvider", return_value=mock_prov)
+    mocker.patch("polybench.core.providers.AnthropicProvider", return_value=mock_prov)
     res = runner.invoke(app, ["compass"])
     assert res.exit_code == 1
     assert "FAIL" in res.stdout
@@ -546,7 +546,9 @@ def test_cli_compass_openai_pass(mocker):
     mocker.patch("polybench.cli.settings.openai_api_key", "sk-oai-test")
     mock_prov = MagicMock()
     mock_prov.generate.return_value = MagicMock(raw_output="OK", runtime_ms=30)
-    mocker.patch("polybench.cli.OpenAICompatibleProvider", return_value=mock_prov)
+    mocker.patch(
+        "polybench.core.providers.OpenAICompatibleProvider", return_value=mock_prov
+    )
     res = runner.invoke(app, ["compass"])
     assert res.exit_code == 0
     assert "PASS" in res.stdout
@@ -608,3 +610,29 @@ def test_build_images_exits_cleanly_when_docker_build_fails(mocker):
     _docker_images(mocker, {}, build_rc=1)
     with pytest.raises(typer.Exit):
         _build_images()
+
+
+def test_cli_dry_run_does_not_build_the_provider(mocker, sample_task_json, monkeypatch):
+    from polybench.config import settings
+
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    build = mocker.patch("polybench.core.runs.make_provider")
+    res = runner.invoke(
+        app,
+        ["run", "--provider", "openai", "--tasks", str(sample_task_json), "--dry-run"],
+    )
+    assert res.exit_code == 0, res.stdout
+    assert "python/test_task" in res.stdout
+    build.assert_not_called()
+
+
+def test_cli_run_exit_codes(sample_task_json, monkeypatch):
+    from polybench.config import settings
+
+    monkeypatch.setattr(settings, "openai_api_key", None)
+    base = ["run", "--tasks", str(sample_task_json), "--dry-run"]
+    assert runner.invoke(app, [*base, "--provider", "nope"]).exit_code == 1
+    assert (
+        runner.invoke(app, [*base, "--provider", "mock", "--tags", "zz"]).exit_code == 2
+    )
+    assert runner.invoke(app, [*base, "--provider", "openai"]).exit_code == 3

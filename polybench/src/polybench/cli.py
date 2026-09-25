@@ -14,16 +14,19 @@ from rich.table import Table
 from polybench import __version__
 from polybench.config import PROJECT_ROOT, settings
 from polybench.db import init_db, get_session
-from polybench.engine import RunConfig, create_run, run_benchmark
-from polybench.providers.base import LLMProvider
-from polybench.providers.anthropic_provider import AnthropicProvider
-from polybench.providers.mock_provider import MockProvider
-from polybench.providers.openai_compatible import OpenAICompatibleProvider
+from polybench.core import providers as core_providers
+from polybench.core import runs as core_runs
+from polybench.core.providers import (
+    CLOUD_PROVIDERS,
+    MissingApiKeyError,
+    ProviderError,
+)
+from polybench.core.tasks import parse_tags, select_tasks
+from polybench.engine import run_benchmark
 from polybench.report.html import generate_report
 from polybench.sandbox.runner import SandboxRunner
 from polybench.schemas import Difficulty, Language, Task
 from polybench.tasks.loader import load_tasks
-from polybench.tasks.registry import TaskRegistry
 from polybench.tasks.verify import verify_task
 
 app = typer.Typer(help="PolyBench AI Coding-Benchmark Harness")
@@ -33,118 +36,20 @@ app.add_typer(tasks_app, name="tasks")
 console = Console()
 
 # ---------------------------------------------------------------------------
-# Provider registry
-# ---------------------------------------------------------------------------
-
-# Maps provider name → (settings attribute name, env var name)
-_PROVIDER_KEYS: dict[str, tuple[str, str]] = {
-    "anthropic": ("anthropic_api_key", "ANTHROPIC_API_KEY"),
-    "openai": ("openai_api_key", "OPENAI_API_KEY"),
-    "groq": ("groq_api_key", "GROQ_API_KEY"),
-    "together": ("together_api_key", "TOGETHER_API_KEY"),
-    "mistral": ("mistral_api_key", "MISTRAL_API_KEY"),
-    "deepseek": ("deepseek_api_key", "DEEPSEEK_API_KEY"),
-    "xai": ("xai_api_key", "XAI_API_KEY"),
-    "gemini": ("gemini_api_key", "GEMINI_API_KEY"),
-    "fireworks": ("fireworks_api_key", "FIREWORKS_API_KEY"),
-    "perplexity": ("perplexity_api_key", "PERPLEXITY_API_KEY"),
-}
-
-# OpenAI-compatible base URLs (all providers except anthropic)
-_COMPAT_BASE_URLS: dict[str, str] = {
-    "openai": "https://api.openai.com/v1",
-    "groq": "https://api.groq.com/openai/v1",
-    "together": "https://api.together.xyz/v1",
-    "mistral": "https://api.mistral.ai/v1",
-    "deepseek": "https://api.deepseek.com/v1",
-    "xai": "https://api.x.ai/v1",
-    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai/",
-    "fireworks": "https://api.fireworks.ai/inference/v1",
-    "perplexity": "https://api.perplexity.ai",
-}
-
-# Default probe model per provider (for compass)
-_COMPASS_MODELS: dict[str, str] = {
-    "anthropic": "claude-sonnet-4-6",
-    "openai": "gpt-4o",
-    "groq": "llama-3.3-70b-versatile",
-    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-    "mistral": "mistral-small-latest",
-    "deepseek": "deepseek-chat",
-    "xai": "grok-3-mini",
-    "gemini": "gemini-2.0-flash",
-    "fireworks": "accounts/fireworks/models/llama-v3p3-70b-instruct",
-    "perplexity": "sonar",
-}
-
-
-_LOCAL_PROVIDERS = {"mock", "ollama", "lmstudio"}
-_ALL_PROVIDERS = set(_PROVIDER_KEYS) | _LOCAL_PROVIDERS
-
-
-def _validate_provider(provider: str) -> None:
-    """Exit with code 1 if provider name is not recognised."""
-    if provider not in _ALL_PROVIDERS:
-        valid = ", ".join(sorted(_ALL_PROVIDERS))
-        console.print(
-            f"[red]Unknown provider: {provider!r}. Valid options: {valid}[/red]"
-        )
-        raise typer.Exit(1)
-
-
-def _get_api_key(provider: str) -> str | None:
-    if provider not in _PROVIDER_KEYS:
-        return None
-    attr, _ = _PROVIDER_KEYS[provider]
-    return getattr(settings, attr, None)
-
-
-def _check_api_key(provider: str) -> None:
-    """Exit with code 3 if a required API key is missing."""
-    if provider in _LOCAL_PROVIDERS:
-        return
-    key = _get_api_key(provider)
-    if not key:
-        _, env_var = _PROVIDER_KEYS.get(provider, ("", f"{provider.upper()}_API_KEY"))
-        console.print(
-            f"[red]{env_var} not set — add it to .env or set the environment variable[/red]"
-        )
-        raise typer.Exit(3)
-
-
-def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider:
-    if provider == "anthropic":
-        return AnthropicProvider(model=model, temperature=temperature)
-    if provider == "mock":
-        return MockProvider(model=model, temperature=temperature)
-    if provider == "ollama":
-        return OpenAICompatibleProvider(
-            api_key="ollama",
-            base_url=settings.ollama_base_url,
-            model=model,
-            temperature=temperature,
-        )
-    if provider == "lmstudio":
-        return OpenAICompatibleProvider(
-            api_key="lm-studio",
-            base_url=settings.lmstudio_base_url,
-            model=model,
-            temperature=temperature,
-        )
-    if provider in _COMPAT_BASE_URLS:
-        return OpenAICompatibleProvider(
-            api_key=_get_api_key(provider) or "",
-            base_url=_COMPAT_BASE_URLS[provider],
-            model=model,
-            temperature=temperature,
-        )
-    console.print(f"[red]Unknown provider: {provider!r}[/red]")
-    raise typer.Exit(1)
-
-
-# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+# Exit codes: 1 general error / unknown provider, 2 no tasks, 3 missing key, 4 no Docker.
+
+
+def _fail(exc: Exception) -> typer.Exit:
+    """Print a core-layer error and return the matching exit, for `raise _fail(e)`."""
+    console.print(f"[red]{exc}[/red]")
+    if isinstance(exc, MissingApiKeyError):
+        return typer.Exit(3)
+    if isinstance(exc, core_runs.NoTasksError):
+        return typer.Exit(2)
+    return typer.Exit(1)
 
 
 def _check_docker() -> None:
@@ -258,14 +163,14 @@ def keys_cmd() -> None:
     """Show which provider API keys are configured."""
     table = Table("Provider", "Env Variable", "Status", "Type")
 
-    for provider, (attr, env_var) in _PROVIDER_KEYS.items():
-        key = getattr(settings, attr, None)
+    for provider, spec in CLOUD_PROVIDERS.items():
+        key = core_providers.api_key(provider)
         if key:
             masked = key[:4] + "..." + key[-4:] if len(key) > 8 else "****"
             status = f"[green]OK  {masked}[/green]"
         else:
             status = "[red]--  not set[/red]"
-        table.add_row(provider, env_var, status, "cloud")
+        table.add_row(provider, spec.env_var, status, "cloud")
 
     table.add_row(
         "ollama",
@@ -313,39 +218,50 @@ def run(
 ) -> None:
     """Run a benchmark."""
     _setup_logging(log_file)
-    _validate_provider(provider)
-    _check_api_key(provider)
-
-    tag_list = [t.strip() for t in tags.split(",")] if tags else None
-
-    loaded = list(load_tasks(tasks))
-    registry = TaskRegistry(loaded)
-    filtered = registry.filter(lang=lang, difficulty=difficulty, tags=tag_list)
-    if not filtered:
-        console.print("[red]No tasks match the given filters[/red]")
-        raise typer.Exit(2)
+    tag_list = parse_tags(tags)
+    try:
+        if dry_run:
+            preview = core_runs.preview_run(
+                provider=provider,
+                tasks_dir=tasks,
+                lang=lang,
+                difficulty=difficulty,
+                tags=tag_list,
+            )
+        else:
+            plan = core_runs.plan_run(
+                provider=provider,
+                model=model,
+                tasks_dir=tasks,
+                samples=samples,
+                k=k,
+                temperature=temperature,
+                lang=lang,
+                difficulty=difficulty,
+                tags=tag_list,
+            )
+    except (ProviderError, core_runs.NoTasksError) as exc:
+        raise _fail(exc)
 
     if dry_run:
         table = Table("ID", "Language", "Difficulty", "Tags", title="Dry-run preview")
-        for t in filtered:
+        for t in preview:
             table.add_row(t.id, t.language, t.difficulty.value, ", ".join(t.tags))
         console.print(table)
         console.print(
-            f"[cyan]{len(filtered)} tasks × {samples} samples = {len(filtered) * samples} LLM calls[/cyan]"
+            f"[cyan]{len(preview)} tasks × {samples} samples = {len(preview) * samples} LLM calls[/cyan]"
         )
         return
 
     _check_docker()
     _build_images()
 
-    llm = _make_provider(provider, model, temperature)
-    runner = SandboxRunner()
-    cfg = RunConfig(model, provider, samples, k, temperature, lang, tag_list)
-
     init_db(db)
     with get_session() as session:
-        pending = create_run(session, cfg, filtered)
-        run_record = run_benchmark(pending.id, cfg, filtered, llm, runner, session)
+        pending = core_runs.start_run(session, plan)
+        run_record = run_benchmark(
+            pending.id, plan.cfg, plan.tasks, plan.provider, SandboxRunner(), session
+        )
         if run_record is None:
             console.print(
                 f"[red]Run {pending.id} could not be loaded from the database[/red]"
@@ -377,10 +293,9 @@ def tasks_list(
     tags: str = typer.Option(None, help="Comma-separated tag filter"),
 ) -> None:
     """List all tasks."""
-    tag_list = [t.strip() for t in tags.split(",")] if tags else None
-    loaded = list(load_tasks(tasks))
-    registry = TaskRegistry(loaded)
-    filtered = registry.filter(lang=lang, difficulty=difficulty, tags=tag_list)
+    filtered = select_tasks(
+        tasks, lang=lang, difficulty=difficulty, tags=parse_tags(tags)
+    )
 
     table = Table("ID", "Language", "Difficulty", "Tags")
     for t in filtered:
@@ -415,10 +330,9 @@ def tasks_verify(
 ) -> None:
     """Check each task in the sandbox: its reference solution must pass the hidden
     tests, and its bare signature must fail them. Needs Docker."""
-    selected = TaskRegistry(list(load_tasks(tasks))).filter(lang=lang)
+    selected = select_tasks(tasks, lang=lang)
     if not selected:
-        console.print("[red]No tasks match the given filters[/red]")
-        raise typer.Exit(2)
+        raise _fail(core_runs.NoTasksError())
 
     _check_docker()
     _build_images()
@@ -505,17 +419,9 @@ def history(
     lang: str = typer.Option(None, help="Filter by language_filter"),
 ) -> None:
     """List past benchmark runs."""
-    from polybench.models import BenchmarkRun
-    from sqlmodel import col, select
-
     init_db(db)
     with get_session() as session:
-        stmt = (
-            select(BenchmarkRun)
-            .order_by(col(BenchmarkRun.created_at).desc())
-            .limit(limit)
-        )
-        runs = session.exec(stmt).all()
+        runs = core_runs.list_runs(session, limit=limit, provider=provider, lang=lang)
 
     if not runs:
         console.print("[dim]No runs found.[/dim]")
@@ -525,10 +431,6 @@ def history(
         "Run ID", "Model", "Provider", "Lang", "Tasks", "n", "Pass@k", "Created"
     )
     for r in runs:
-        if provider and r.provider != provider:
-            continue
-        if lang and r.language_filter != lang:
-            continue
         table.add_row(
             r.id[:12],
             r.model,
@@ -550,8 +452,7 @@ def export(
     out: Path = typer.Option(None, help="Output file (default: stdout)"),
 ) -> None:
     """Export task results for a run to JSON or CSV."""
-    from polybench.models import BenchmarkRun, TaskResult, Sample
-    from sqlmodel import select
+    from polybench.models import BenchmarkRun, Sample
 
     init_db(db)
     with get_session() as session:
@@ -559,12 +460,8 @@ def export(
         if run is None:
             console.print(f"[red]Run {run_id!r} not found[/red]")
             raise typer.Exit(1)
-        results = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_id)
-        ).all()
-        samples = session.exec(
-            select(Sample).join(TaskResult).where(TaskResult.run_id == run_id)
-        ).all()
+        results = core_runs.task_results(session, run_id)
+        samples = core_runs.run_samples(session, run_id)
 
     rows = []
     sample_map: dict[str, list[Sample]] = {}
@@ -634,15 +531,15 @@ def compass(
         return f"[{_colors.get(s, 'white')}]{s}[/{_colors.get(s, 'white')}]"
 
     # Cloud providers
-    for provider_name, probe_model in _COMPASS_MODELS.items():
-        key = _get_api_key(provider_name)
-        if not key:
+    for provider_name, spec in CLOUD_PROVIDERS.items():
+        probe_model = spec.probe_model
+        if not core_providers.is_configured(provider_name):
             table.add_row(
                 provider_name, probe_model, _styled("SKIP"), "API key not configured"
             )
             continue
         try:
-            p = _make_provider(provider_name, probe_model, 0.0)
+            p = core_providers.make_provider(provider_name, probe_model, 0.0)
             res = p.generate("Reply with exactly: OK")
             if "ok" in res.raw_output.lower():
                 status, detail = "PASS", f"responded in {res.runtime_ms}ms"
@@ -782,10 +679,8 @@ def health(
         all_ok = False
 
     # Provider keys
-    configured = sum(
-        1 for attr, _ in _PROVIDER_KEYS.values() if getattr(settings, attr, None)
-    )
-    total = len(_PROVIDER_KEYS)
+    configured = sum(1 for p in CLOUD_PROVIDERS if core_providers.is_configured(p))
+    total = len(CLOUD_PROVIDERS)
     console.print(
         f"[green]Keys[/green]     {configured}/{total} cloud providers configured"
     )

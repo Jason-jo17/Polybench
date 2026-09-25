@@ -131,7 +131,7 @@ Add PolyBench to your MCP client's configuration, for example `claude_desktop_co
 }
 ```
 
-The server exposes tools to list and validate tasks, start a benchmark run, fetch a run and its per-task results, and compare two runs.
+The server exposes tools to list and validate tasks, list the available providers, start a benchmark run, fetch a run and its per-task results, and compare two runs. It supports the same providers and filters as the CLI.
 
 ## Providers
 
@@ -187,6 +187,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details, and [#15](https://github.com
 ```
 polybench/
 ├── src/polybench/     # engine, providers, sandbox runner, scoring, CLI, API, MCP server
+│   └── core/          # shared layer under the CLI, API and MCP server
 ├── tasks/             # benchmark tasks, one JSON file each
 ├── sandbox/           # Dockerfiles for the Python, Node, Go and Rust sandboxes
 ├── tests/             # pytest suite, including property-based tests
@@ -194,6 +195,8 @@ polybench/
 ```
 
 ## Development
+
+The CLI (`cli.py`), the HTTP API (`api/main.py`) and the MCP server (`server.py`) are thin front ends. Each one parses its own input and formats its own output. Everything else goes in `src/polybench/core/`: the provider catalogue and construction, task selection, and planning, starting and reading back runs. Put new behaviour there, and all three front ends pick it up.
 
 ```bash
 cd polybench
