@@ -10,9 +10,9 @@ from rich.console import Console
 from rich.table import Table
 
 from polybench import __version__
-from polybench.config import settings
+from polybench.config import PROJECT_ROOT, settings
 from polybench.db import init_db, get_session
-from polybench.engine import RunConfig, run_benchmark
+from polybench.engine import RunConfig, create_run, run_benchmark
 from polybench.providers.base import LLMProvider
 from polybench.providers.anthropic_provider import AnthropicProvider
 from polybench.providers.mock_provider import MockProvider
@@ -159,23 +159,28 @@ def _build_images() -> None:
         "polybench-go:local": "Dockerfile.go",
         "polybench-rust:local": "Dockerfile.rust",
     }
-    root = Path(__file__).resolve().parents[3]
+    sandbox_dir = PROJECT_ROOT / "sandbox"
     for tag, dockerfile in images.items():
         res = subprocess.run(["docker", "image", "inspect", tag], capture_output=True)
         if res.returncode != 0:
             console.print(f"[yellow]Building {tag}…[/yellow]")
-            subprocess.run(
+            build = subprocess.run(
                 [
                     "docker",
                     "build",
                     "-t",
                     tag,
                     "-f",
-                    str(root / "sandbox" / dockerfile),
-                    str(root / "sandbox"),
+                    str(sandbox_dir / dockerfile),
+                    str(sandbox_dir),
                 ],
-                check=True,
             )
+            if build.returncode != 0:
+                console.print(
+                    f"[red]Couldn't build {tag} from {sandbox_dir / dockerfile}. "
+                    "See the Docker output above.[/red]"
+                )
+                raise typer.Exit(1)
             console.print(f"[green]Built {tag}[/green]")
 
 
@@ -310,7 +315,13 @@ def run(
 
     init_db(db)
     with get_session() as session:
-        run_record = run_benchmark(cfg, filtered, llm, runner, session)
+        pending = create_run(session, cfg, filtered)
+        run_record = run_benchmark(pending.id, cfg, filtered, llm, runner, session)
+        if run_record is None:
+            console.print(
+                f"[red]Run {pending.id} could not be loaded from the database[/red]"
+            )
+            raise typer.Exit(1)
         run_id = run_record.id
         run_pass_at_k = run_record.pass_at_k
 

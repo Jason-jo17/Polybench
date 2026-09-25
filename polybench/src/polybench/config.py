@@ -1,6 +1,10 @@
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The polybench/ project directory (holds sandbox/, tasks/ and pyproject.toml).
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):

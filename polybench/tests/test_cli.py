@@ -69,32 +69,77 @@ def test_cli_tasks_validate_fail(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_cli_run_success(mocker, sample_task_json, tmp_db):
-    mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
+def _run_args(tasks_dir, db):
+    return [
+        "run",
+        "--provider",
+        "mock",
+        "--tasks",
+        str(tasks_dir),
+        "--db",
+        str(db),
+        "--samples",
+        "2",
+        "-k",
+        "1",
+    ]
+
+
+def test_cli_run_passes_the_new_run_id_to_the_engine(mocker, sample_task_json, tmp_db):
+    mocker.patch("polybench.cli._check_docker")
+    mocker.patch("polybench.cli._build_images")
     mock_run_benchmark = mocker.patch("polybench.cli.run_benchmark")
     mock_record = MagicMock()
     mock_record.id = "run-abc"
     mock_record.pass_at_k = 0.95
     mock_run_benchmark.return_value = mock_record
 
-    res = runner.invoke(
-        app,
-        [
-            "run",
-            "--provider",
-            "mock",
-            "--tasks",
-            str(sample_task_json),
-            "--db",
-            str(tmp_db),
-            "--samples",
-            "1",
-            "-k",
-            "1",
-        ],
-    )
+    res = runner.invoke(app, _run_args(sample_task_json, tmp_db))
+
     assert res.exit_code == 0, res.stdout
     assert "run-abc" in res.stdout
+    run_id, cfg, tasks, *_ = mock_run_benchmark.call_args.args
+    assert isinstance(run_id, str) and run_id
+    assert cfg.n == 2 and cfg.provider == "mock"
+    assert [t.id for t in tasks] == ["python/test_task"]
+
+
+def test_cli_run_end_to_end_with_fake_sandbox(mocker, sample_task_json, tmp_db):
+    """Runs the real engine; only Docker is replaced. Regression test for #3."""
+    from sqlmodel import Session, create_engine, select
+
+    from polybench.sandbox.runner import SandboxResult
+
+    mocker.patch("polybench.cli._check_docker")
+    mocker.patch("polybench.cli._build_images")
+    fake_runner = MagicMock()
+    fake_runner.run.return_value = SandboxResult(
+        exit_code=0, stdout="1 passed", stderr="", runtime_ms=5, timed_out=False
+    )
+    mocker.patch("polybench.cli.SandboxRunner", return_value=fake_runner)
+
+    res = runner.invoke(app, _run_args(sample_task_json, tmp_db))
+
+    assert res.exit_code == 0, res.stdout
+    assert "Run complete" in res.stdout
+    with Session(create_engine(f"sqlite:///{tmp_db}")) as session:
+        run = session.exec(select(BenchmarkRun)).one()
+        result = session.exec(select(TaskResult)).one()
+    assert run.status == "COMPLETED"
+    assert run.total_tasks == 1 and run.samples_per_task == 2
+    assert run.pass_at_k == 1.0
+    assert result.samples_passed == 2
+
+
+def test_cli_run_reports_missing_run_record(mocker, sample_task_json, tmp_db):
+    mocker.patch("polybench.cli._check_docker")
+    mocker.patch("polybench.cli._build_images")
+    mocker.patch("polybench.cli.run_benchmark", return_value=None)
+
+    res = runner.invoke(app, _run_args(sample_task_json, tmp_db))
+
+    assert res.exit_code == 1
+    assert "could not be loaded" in res.stdout
 
 
 def test_cli_run_dry_run(sample_task_json):
