@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { LANG_COLORS, LANG_NAMES, pct, type RunStatus } from "@/lib/api";
+import { LANG_COLORS, LANG_NAMES, pct, type RunStatus, type TaskScore } from "@/lib/api";
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   PENDING: "Queued",
@@ -93,8 +93,10 @@ export function PageHead({ title, lede, children }: { title: ReactNode; lede?: R
   );
 }
 
-/** Pass/fail cells for a run: one per task, shaded by task pass rate. */
-export function ResultStrip({ values, total }: { values: number[]; total: number }) {
+/** Pass/fail cells for a run: one per task, shaded by task pass rate.
+ *  Tasks with no finished sample, or not reported yet, are left grey. */
+export function ResultStrip({ scores, total }: { scores: TaskScore[]; total: number }) {
+  const values = scores.map((s) => (s.samples_done > 0 ? s.pass_at_k : undefined));
   const cells = Array.from({ length: Math.max(total, values.length) }, (_, i) => values[i]);
   return (
     <span className="strip" aria-hidden="true">

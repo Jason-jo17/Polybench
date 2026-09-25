@@ -17,6 +17,16 @@ export interface Run {
   git_sha: string | null;
 }
 
+export interface TaskScore {
+  task_id: string;
+  pass_at_k: number;
+  /** 0 until the task's first sample finishes */
+  samples_done: number;
+}
+
+/** A run from `/runs?include=task_scores`. */
+export type RunWithScores = Run & { task_scores: TaskScore[] };
+
 export interface TaskResult {
   id: string;
   run_id: string;
