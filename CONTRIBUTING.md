@@ -19,9 +19,9 @@ You can also filter issues by label:
 
 If you find a problem that isn't listed, open an issue using a template. If it's a way to escape the sandbox, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
-## Current state of CI
+## CI
 
-CI runs on every pull request to `main` and currently fails for reasons unrelated to most PRs. The failures are tracked in [#3](https://github.com/Jason-jo17/Polybench/issues/3), [#4](https://github.com/Jason-jo17/Polybench/issues/4), [#6](https://github.com/Jason-jo17/Polybench/issues/6), [#7](https://github.com/Jason-jo17/Polybench/issues/7) and [#8](https://github.com/Jason-jo17/Polybench/issues/8). Until they're fixed, reviewers check that **your PR doesn't add new failures**. Say in your PR description which checks were already failing.
+CI runs on every pull request to `main` and has three jobs: **backend** (Ruff, strict mypy, pytest with a 90% coverage gate), **dashboard** (lint, type check, unit tests, build) and **tasks** (`polybench tasks verify` in the real sandbox). All of them pass on `main`, so a failing check on your PR is something your change introduced.
 
 ## Set up locally
 
