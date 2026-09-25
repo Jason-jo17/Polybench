@@ -2,9 +2,14 @@ name: ci
 on:
   push: { branches: [main] }
   pull_request: { branches: [main] }
+
 jobs:
-  quality:
+  backend:
+    name: backend (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: polybench
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -23,3 +28,25 @@ jobs:
         run: uv run mypy src
       - name: Pytest + coverage gate
         run: uv run pytest --cov=polybench --cov-report=term-missing --cov-fail-under=90
+
+  dashboard:
+    name: dashboard (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: polybench/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: polybench/web/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build

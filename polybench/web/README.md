@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PolyBench dashboard
 
-## Getting Started
+The web interface for PolyBench: start benchmark runs, inspect each task and sample, and compare runs. It's a Next.js app that talks to the PolyBench FastAPI backend.
 
-First, run the development server:
+## Running it
+
+Start the API first (from `polybench/`):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+uv run uvicorn polybench.api.main:app --port 8080
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then start the dashboard:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open http://localhost:3000.
 
-## Learn More
+Requests to `/api/*` are proxied to the backend (see `next.config.ts`). The backend defaults to `http://127.0.0.1:8080`; set `NEXT_PUBLIC_API_URL` to point somewhere else.
 
-To learn more about Next.js, take a look at the following resources:
+If `POLYBENCH_DASHBOARD_PASSWORD` is set, the dashboard asks for it through HTTP basic auth (see `src/middleware.ts`). Any username works.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | development server with hot reload |
+| `npm run build` | production build (standalone output, used by `Dockerfile.frontend`) |
+| `npm start` | serve the production build |
+| `npm run lint` | ESLint |
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the [repository README](../../README.md) for the rest of the project.

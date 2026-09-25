@@ -1,69 +1,32 @@
 # PolyBench
 
-PolyBench is a polyglot AI coding-benchmark harness. It sends real-world programming tasks to frontier LLMs (Claude, GPT), extracts the generated code, executes it inside a hardened sandbox against a hidden test suite, and scores model performance using `pass@k` plus a structured failure taxonomy. It supports Python, JavaScript, and Go tasks and emits both terminal and HTML evaluation reports.
+PolyBench measures how well large language models write working code. It sends programming tasks to a model, extracts the generated code, runs it in an isolated Docker sandbox against a hidden test suite, and scores the results with pass@k plus a failure taxonomy (extraction failed, compile error, runtime error, wrong output, timeout, memory exceeded, security violation).
 
-## Architecture
+It includes 21 tasks in Python, JavaScript, Go and Rust, and supports Anthropic, OpenAI, OpenAI-compatible providers, and local models through Ollama or LM Studio.
 
-```
-[ LLM Provider ] --> [ Extract Code ] --> [ Docker Sandbox ] --> [ Scoring ] --> [ Report ]
-```
+## Install
 
-### Security Model
-The sandbox is completely isolated. Generated code runs in a Docker container without host mounts (except read-only code injection), no network access, strict memory and CPU limits, and dropped privileges. Generated/untrusted code is never executed via `exec` or `eval` on the host.
-
-### Pass@k
-Model performance is evaluated using the unbiased `pass@k` estimator:
-`pass@k = 1 - C(n - c, k) / C(n, k)` when `(n - c) >= k`, else `1.0`.
-
-## Quickstart
-
-### Local Development (Manual Setup)
-
-1. **Initialize backend project using uv**:
-   ```bash
-   uv sync --all-extras --dev
-   ```
-2. **Install pre-commit hooks**:
-   ```bash
-   pre-commit install
-   ```
-3. **Build sandbox containers**:
-   ```bash
-   docker build -t polybench-python:local -f sandbox/Dockerfile.python sandbox/
-   # Repeat for node, go
-   ```
-4. **Run backend server**:
-   ```bash
-   uv run uvicorn polybench.api.main:app --reload
-   ```
-5. **Run frontend (Next.js)**:
-   ```bash
-   cd web
-   npm install
-   npm run dev
-   ```
-   Access the dashboard at `http://localhost:3000`.
-
-### Production Deployment (Docker Compose)
-
-To run the entire stack (Database, Backend, Frontend) via Docker Compose:
 ```bash
-docker-compose up -d --build
+uv sync --all-extras --dev
+cp .env.example .env        # add the API keys you plan to use
+uv run polybench setup      # builds the sandbox images (needs Docker)
 ```
-Access the application at `http://localhost:3000`.
 
-### AI Agent Connectivity (MCP)
+## Use
 
-PolyBench includes a fully compliant Model Context Protocol (MCP) server. To connect it to your AI agent (like Claude Desktop), add the following to your MCP configuration (e.g., `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "polybench": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "polybench.server"],
-      "cwd": "/absolute/path/to/polybench"
-    }
-  }
-}
+```bash
+uv run polybench run --provider mock --model demo --dry-run
+uv run polybench run --provider anthropic --model claude-sonnet-4-6 -n 5 -k 1
+uv run polybench history
+uv run polybench report --run-id RUN_ID --out report.html
 ```
+
+The package also provides a FastAPI backend (`polybench.api.main:app`) for the web dashboard in `web/`, and an MCP server (`polybench-mcp`) for AI agents.
+
+pass@k uses the unbiased estimator `pass@k = 1 − C(n − c, k) / C(n, k)`, or `1.0` when `n − c < k`.
+
+Full documentation, including the dashboard, Docker Compose, MCP setup and configuration, is in the [repository README](https://github.com/Jason-jo17/Polybench#readme).
+
+## License
+
+MIT. See [LICENSE](https://github.com/Jason-jo17/Polybench/blob/main/LICENSE).

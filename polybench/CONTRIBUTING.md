@@ -8,7 +8,7 @@ PolyBench consists of a FastAPI backend and a Next.js frontend.
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+
+- Node.js 20+
 - Docker (for sandboxed task execution)
 - `uv` (for Python dependency management)
 
@@ -22,9 +22,9 @@ PolyBench consists of a FastAPI backend and a Next.js frontend.
    pre-commit install
    ```
 3. Copy `.env.example` to `.env` and fill in any required API keys.
-4. Run the backend development server:
+4. Run the backend API server:
    ```bash
-   uv run polybench-mcp  # Or run the API server directly if needed
+   uv run uvicorn polybench.api.main:app --reload --port 8080
    ```
 
 ### Frontend Setup
@@ -45,10 +45,9 @@ PolyBench consists of a FastAPI backend and a Next.js frontend.
 ### Building Sandboxes
 Before running tasks, you need to build the Docker sandbox containers:
 ```bash
-docker build -t polybench-python:local -f sandbox/Dockerfile.python sandbox/
-docker build -t polybench-node:local -f sandbox/Dockerfile.node sandbox/
-# Repeat for other supported languages
+uv run polybench setup
 ```
+This builds the Python, Node, Go and Rust images from `sandbox/`.
 
 ## Adding New Benchmark Tasks
 
