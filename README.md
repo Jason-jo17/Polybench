@@ -103,17 +103,19 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000. If `POLYBENCH_DASHBOARD_PASSWORD` is set in `.env`, the browser asks for it; any username works.
+Open http://localhost:3000. If `POLYBENCH_DASHBOARD_PASSWORD` is set in `.env`, the browser asks for it; any username works. To point the dashboard at an API somewhere other than `http://127.0.0.1:8080`, set `POLYBENCH_API_URL` before `npm run dev` or `npm run build`.
 
 ### With Docker Compose
 
 ```bash
 cd polybench
+cp .env.example .env      # optional: API keys, POLYBENCH_DASHBOARD_PASSWORD, POSTGRES_PASSWORD
 docker compose up -d --build
 ```
 
-This starts Postgres, the API and the dashboard. The dashboard is at http://localhost:3000.
-For deployments, set a strong `POSTGRES_PASSWORD` in `polybench/.env` before starting the services.
+This starts Postgres, the API and the dashboard. The dashboard is at http://localhost:3000, and the API is also exposed at http://localhost:8001. If those ports are taken, set `POLYBENCH_WEB_PORT` and `POLYBENCH_API_PORT` in `.env`. The first run builds the four sandbox images, which takes a few minutes.
+
+The API starts sandbox containers through the host's Docker socket, which gives it root-equivalent access to the host. Only run the stack on a machine you trust it with, and set a strong `POSTGRES_PASSWORD` in `polybench/.env` anywhere other than your own computer (`POSTGRES_USER` and `POSTGRES_DB` can be changed the same way).
 
 ### From an AI agent (MCP)
 

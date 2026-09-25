@@ -1,46 +1,35 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 
+// HTTP basic auth for the dashboard, enabled by POLYBENCH_DASHBOARD_PASSWORD.
+// Any username is accepted. The browser also sends these credentials with its
+// /api requests, which the backend checks against the same password.
+// Proxy runs on the Node.js runtime, so the password is read when the server
+// starts, not baked in at build time.
+
+function passwordMatches(header: string | null, expected: string): boolean {
+  const [scheme, encoded] = header?.split(" ") ?? [];
+  if (scheme !== "Basic" || !encoded) return false;
+  const decoded = Buffer.from(encoded, "base64").toString();
+  // Passwords may contain colons, so split on the first one only.
+  const password = decoded.slice(decoded.indexOf(":") + 1);
+  const a = Buffer.from(password);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export function proxy(req: NextRequest) {
-  const basicAuth = req.headers.get("authorization");
-  const dashboardPassword = process.env.POLYBENCH_DASHBOARD_PASSWORD;
-
-  if (dashboardPassword) {
-    if (basicAuth) {
-      const authValue = basicAuth.split(" ")[1];
-      if (authValue) {
-        // Decode base64: Basic auth string is username:password
-        const decoded = Buffer.from(authValue, "base64").toString();
-        // Since we don't care about the username, just get the password
-        // The format is username:password. It might have multiple colons if the password has colons,
-        // so we split by the first colon.
-        const firstColonIndex = decoded.indexOf(':');
-        const password = firstColonIndex !== -1 ? decoded.substring(firstColonIndex + 1) : decoded;
-
-        if (password === dashboardPassword) {
-          return NextResponse.next();
-        }
-      }
-    }
-
-    return new NextResponse("Authentication required", {
-      status: 401,
-      headers: {
-        "WWW-Authenticate": 'Basic realm="PolyBench Dashboard"',
-      },
-    });
+  const expected = process.env.POLYBENCH_DASHBOARD_PASSWORD;
+  if (!expected || passwordMatches(req.headers.get("authorization"), expected)) {
+    return NextResponse.next();
   }
-
-  return NextResponse.next();
+  return new NextResponse("Authentication required", {
+    status: 401,
+    headers: { "WWW-Authenticate": 'Basic realm="PolyBench Dashboard"' },
+  });
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+  // Everything except static assets and the favicon.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

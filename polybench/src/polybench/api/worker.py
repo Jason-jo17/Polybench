@@ -5,6 +5,7 @@ from polybench.config import settings
 from polybench.db import get_session
 from polybench.engine import run_benchmark, RunConfig
 from polybench.providers.base import LLMProvider
+from polybench.sandbox.images import docker_available, ensure_images
 from polybench.sandbox.runner import SandboxRunner
 from polybench.tasks.loader import load_tasks
 from polybench.tasks.registry import TaskRegistry
@@ -37,6 +38,9 @@ def execute_benchmark_run(
                     session.commit()
             return
 
+        if not docker_available():
+            raise RuntimeError("Docker is not available to the API server.")
+        ensure_images(_log.info)
         runner = SandboxRunner()
         with get_session() as session:
             _log.info(
