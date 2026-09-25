@@ -1,20 +1,17 @@
 import logging
-import threading
 from pathlib import Path
 
-from sqlmodel import Session
-
+from polybench.config import settings
 from polybench.db import get_session
 from polybench.engine import run_benchmark, RunConfig
 from polybench.providers.base import LLMProvider
 from polybench.sandbox.runner import SandboxRunner
-from polybench.schemas import Task
 from polybench.tasks.loader import load_tasks
 from polybench.tasks.registry import TaskRegistry
 
 _log = logging.getLogger("polybench.api.worker")
 
-from polybench.config import settings
+
 def execute_benchmark_run(
     run_id: str,
     cfg: RunConfig,

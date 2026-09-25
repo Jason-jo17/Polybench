@@ -1,9 +1,8 @@
 import pytest
 import subprocess
-from unittest.mock import MagicMock, call
-from pathlib import Path
+from unittest.mock import MagicMock
 from polybench.schemas import Task, Language, Difficulty
-from polybench.sandbox.runner import SandboxRunner, SandboxResult, _cleanup_containers, _active_containers
+from polybench.sandbox.runner import SandboxRunner, _cleanup_containers, _active_containers
 
 def test_sandbox_standard_language(mocker):
     # Mock subprocess.run

@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from polybench.schemas import Task
+from polybench.sandbox.languages import SPECS
 from polybench.sandbox.policy import (
     NETWORK, MEMORY, CPUS, PIDS_LIMIT, READ_ONLY, TMPFS, USER, WALL_CLOCK_BUFFER_S, CAP_DROP
 )
@@ -23,7 +24,6 @@ def _trim(s: str) -> str:
     half = _MAX_OUTPUT_BYTES // 2
     dropped = len(s) - _MAX_OUTPUT_BYTES
     return s[:half] + f"\n...[{dropped} bytes truncated]...\n" + s[-half:]
-from polybench.sandbox.languages import SPECS
 
 # Global registry of active container names for cleanup on interrupt or exit
 _active_containers: set[str] = set()

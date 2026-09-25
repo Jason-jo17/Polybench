@@ -109,7 +109,7 @@ def _tool_validate_tasks(args: dict[str, Any]) -> str:
         errors.append(str(exc))
 
     if errors:
-        return f"VALIDATION FAILED:\n" + "\n".join(errors)
+        return "VALIDATION FAILED:\n" + "\n".join(errors)
     return f"OK — {count} tasks validated successfully."
 
 
@@ -211,7 +211,6 @@ def _tool_run_benchmark(args: dict[str, Any]) -> str:
     from polybench.api.worker import execute_benchmark_run
     from polybench.tasks.loader import load_tasks
     from polybench.tasks.registry import TaskRegistry
-    from pathlib import Path as _Path
 
     _require_args(args, "model", "provider")
     db = args.get("db", _DB_DEFAULT)

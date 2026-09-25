@@ -1,6 +1,5 @@
 import concurrent.futures
 import logging
-import subprocess
 import threading
 from sqlmodel import Session
 from rich.progress import Progress

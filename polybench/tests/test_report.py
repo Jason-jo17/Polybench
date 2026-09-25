@@ -2,7 +2,6 @@ import pytest
 from polybench.db import get_session
 from polybench.report.html import generate_report
 from polybench.models import BenchmarkRun, TaskResult, Sample
-from sqlmodel import select
 
 def test_generate_report_not_found(tmp_db):
     with get_session() as session:

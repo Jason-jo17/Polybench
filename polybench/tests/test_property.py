@@ -1,11 +1,9 @@
 """Property-based and coverage-gap tests using Hypothesis."""
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock
 
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 
 from polybench.extract import extract_code
 from polybench.schemas import Language
@@ -17,7 +15,7 @@ from polybench.scoring.taxonomy import FailureKind, classify
 # extract_code — never crashes, always returns str | None
 # ---------------------------------------------------------------------------
 
-LANGUAGES = [l.value for l in Language]
+LANGUAGES = [lang.value for lang in Language]
 
 
 @given(st.text(), st.sampled_from(LANGUAGES))

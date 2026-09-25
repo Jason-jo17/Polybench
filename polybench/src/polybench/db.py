@@ -1,9 +1,8 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, event, text
+from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, create_engine
-import polybench.models  # Ensure models are loaded before create_all
 
 engine: Engine | None = None
 

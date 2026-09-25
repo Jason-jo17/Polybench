@@ -1,6 +1,4 @@
 import json
-import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -170,7 +168,6 @@ def test_cli_history_empty(tmp_db):
 
 def test_cli_history_with_runs(tmp_db):
     from polybench.db import get_session
-    from polybench.models import BenchmarkRun
     run = BenchmarkRun(
         model="mock-model", provider="mock", samples_per_task=1,
         k=1, temperature=0.2, total_tasks=1, pass_at_k=1.0,
@@ -186,7 +183,7 @@ def test_cli_history_with_runs(tmp_db):
 
 def test_cli_export_json(tmp_db, tmp_path):
     from polybench.db import get_session
-    from polybench.models import BenchmarkRun, TaskResult, Sample
+    from polybench.models import TaskResult, Sample
     run = BenchmarkRun(
         model="m", provider="mock", samples_per_task=1,
         k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,
@@ -219,7 +216,7 @@ def test_cli_export_json(tmp_db, tmp_path):
 
 def test_cli_export_csv(tmp_db, tmp_path):
     from polybench.db import get_session
-    from polybench.models import BenchmarkRun, TaskResult, Sample
+    from polybench.models import TaskResult, Sample
     run = BenchmarkRun(
         model="m", provider="mock", samples_per_task=1,
         k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,
@@ -255,7 +252,6 @@ def test_cli_export_not_found(tmp_db):
 
 def test_cli_export_bad_format(tmp_db):
     from polybench.db import get_session
-    from polybench.models import BenchmarkRun
     run = BenchmarkRun(
         model="m", provider="mock", samples_per_task=1,
         k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,

@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from typing import Optional
 
-from polybench.schemas import Task, Language, Difficulty
+from polybench.schemas import Task, Difficulty
 
 class TaskRegistry:
     def __init__(self, tasks: Iterable[Task]) -> None:

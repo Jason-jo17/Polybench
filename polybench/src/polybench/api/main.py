@@ -15,15 +15,13 @@ from polybench.db import init_db
 from polybench.engine import RunConfig
 from polybench.models import BenchmarkRun, TaskResult, Sample
 import subprocess
+from polybench.providers.anthropic_provider import AnthropicProvider
+from polybench.providers.mock_provider import MockProvider
+from polybench.providers.openai_compatible import OpenAICompatibleProvider
 from polybench.tasks.loader import load_tasks
 from polybench.tasks.registry import TaskRegistry
 
 _TASKS_DEFAULT = Path(settings.polybench_tasks_dir).resolve()
-
-# Providers
-from polybench.providers.anthropic_provider import AnthropicProvider
-from polybench.providers.mock_provider import MockProvider
-from polybench.providers.openai_compatible import OpenAICompatibleProvider
 
 # Using the same compat URLs as the CLI
 _COMPAT_BASE_URLS: dict[str, str] = {

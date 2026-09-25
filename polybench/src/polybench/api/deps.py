@@ -1,5 +1,4 @@
 from typing import Annotated
-from collections.abc import Generator
 import secrets
 
 from fastapi import Depends, HTTPException, status
