@@ -1,4 +1,5 @@
 """Deterministic, network-free provider used exclusively in tests."""
+
 from polybench.providers.base import LLMProvider
 from polybench.schemas import GenerationResult
 
@@ -33,7 +34,7 @@ _CANNED: dict[str, tuple[str, str]] = {
         "    def put(self, key: int, value: int) -> None: pass\n```",
     ),
     "SafeCounter": (
-        "```go\npackage solution\nimport \"sync\"\n"
+        '```go\npackage solution\nimport "sync"\n'
         "type SafeCounter struct{ mu sync.Mutex; n int }\n"
         "func (c *SafeCounter) Inc() { c.mu.Lock(); c.n++; c.mu.Unlock() }\n"
         "func (c *SafeCounter) Value() int { c.mu.Lock(); defer c.mu.Unlock(); return c.n }\n```",

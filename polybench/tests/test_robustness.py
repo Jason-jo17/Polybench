@@ -18,6 +18,7 @@ def test_setup_command(mocker):
     ]
     from typer.testing import CliRunner
     from polybench.cli import app
+
     runner = CliRunner()
     res = runner.invoke(app, ["setup"])
     assert res.exit_code == 0
@@ -33,7 +34,9 @@ def test_anthropic_retries(mocker):
 
     mock_response = MagicMock()
     mock_response.status_code = 429
-    mock_err = anthropic.RateLimitError("Rate limit exceeded", response=mock_response, body=None)
+    mock_err = anthropic.RateLimitError(
+        "Rate limit exceeded", response=mock_response, body=None
+    )
 
     mock_success = MagicMock()
     mock_block = MagicMock(spec=anthropic.types.TextBlock)
@@ -81,7 +84,9 @@ def test_openai_compatible_retries(mocker):
 
     mock_response = MagicMock()
     mock_response.status_code = 429
-    mock_err = openai.RateLimitError("Rate limit exceeded", response=mock_response, body=None)
+    mock_err = openai.RateLimitError(
+        "Rate limit exceeded", response=mock_response, body=None
+    )
 
     mock_success = MagicMock()
     mock_message = MagicMock()
@@ -125,6 +130,7 @@ def test_openai_compatible_retries_exhausted(mocker):
 def test_retry_jitter_applied(mocker):
     """Retry sleeps include jitter (sleep amount should vary across calls)."""
     import random
+
     mock_client = MagicMock()
     mocker.patch("openai.OpenAI", return_value=mock_client)
 

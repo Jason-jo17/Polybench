@@ -13,10 +13,7 @@ _log = logging.getLogger("polybench.api.worker")
 
 
 def execute_benchmark_run(
-    run_id: str,
-    cfg: RunConfig,
-    provider: LLMProvider,
-    tasks_dir: Path | None = None
+    run_id: str, cfg: RunConfig, provider: LLMProvider, tasks_dir: Path | None = None
 ) -> None:
     if tasks_dir is None:
         tasks_dir = Path(settings.polybench_tasks_dir).resolve()
@@ -32,6 +29,7 @@ def execute_benchmark_run(
             _log.warning("No tasks match the given filters for run.")
             with get_session() as session:
                 from polybench.models import BenchmarkRun
+
                 run_record = session.get(BenchmarkRun, run_id)
                 if run_record:
                     run_record.status = "COMPLETED"
@@ -41,13 +39,16 @@ def execute_benchmark_run(
 
         runner = SandboxRunner()
         with get_session() as session:
-            _log.info(f"Starting background run {run_id} for {cfg.model} via {cfg.provider}")
+            _log.info(
+                f"Starting background run {run_id} for {cfg.model} via {cfg.provider}"
+            )
             run_benchmark(run_id, cfg, filtered, provider, runner, session)
             _log.info("Background run completed.")
     except Exception as e:
         _log.error(f"Error in background worker: {e}", exc_info=True)
         with get_session() as session:
             from polybench.models import BenchmarkRun
+
             run_record = session.get(BenchmarkRun, run_id)
             if run_record:
                 run_record.status = "FAILED"

@@ -125,7 +125,12 @@ def run_benchmark(
                     failure_kind = FailureKind.EXTRACTION_FAILED.value
                 else:
                     run_res = runner.run(extracted_code, task)
-                    failure = classify(run_res.exit_code, run_res.stdout, run_res.stderr, run_res.timed_out)
+                    failure = classify(
+                        run_res.exit_code,
+                        run_res.stdout,
+                        run_res.stderr,
+                        run_res.timed_out,
+                    )
                     passed = failure is None
                     failure_kind = failure.value if failure else None
                     exit_code = run_res.exit_code
@@ -137,7 +142,10 @@ def run_benchmark(
             except Exception as exc:
                 _log.error(
                     "Worker exception task=%s sample=%d: %s",
-                    task.id, sample_index, exc, exc_info=True,
+                    task.id,
+                    sample_index,
+                    exc,
+                    exc_info=True,
                 )
                 failure_kind = FailureKind.RUNTIME_ERROR.value
 
@@ -176,7 +184,9 @@ def run_benchmark(
     # Write final pass counts and pass@k in a single pass over tasks.
     total_pass_at_k = 0.0
     for task in tasks:
-        result_row: TaskResult | None = session.get(TaskResult, task_result_ids[task.id])
+        result_row: TaskResult | None = session.get(
+            TaskResult, task_result_ids[task.id]
+        )
         if result_row is not None:
             result_row.samples_passed = pass_counts[task.id]
             result_row.task_pass_at_k = pass_at_k(cfg.n, pass_counts[task.id], cfg.k)

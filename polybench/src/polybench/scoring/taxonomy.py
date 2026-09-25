@@ -64,10 +64,10 @@ def classify(
     _wrong_signals_stderr = ("AssertionError", "FAIL", "--- FAIL:")
     _wrong_signals_stdout = (
         "AssertionError",
-        "FAILED",       # pytest: "FAILED test_solution.py::test_name"
-        "FAIL",         # Go summary line or generic failure
-        "--- FAIL:",    # Go per-test marker
-        "not ok ",      # Node TAP: "not ok 1 description"
+        "FAILED",  # pytest: "FAILED test_solution.py::test_name"
+        "FAIL",  # Go summary line or generic failure
+        "--- FAIL:",  # Go per-test marker
+        "not ok ",  # Node TAP: "not ok 1 description"
     )
     if any(sig in stderr for sig in _wrong_signals_stderr):
         return FailureKind.WRONG_OUTPUT
@@ -76,11 +76,11 @@ def classify(
 
     # --- Runtime errors (uncaught exceptions, panics) ---
     _runtime_signals = (
-        "Traceback",        # Python traceback
-        "panic:",           # Go panic
-        "ReferenceError",   # JS
-        "TypeError",        # JS / Python
-        "RuntimeError",     # Python
+        "Traceback",  # Python traceback
+        "panic:",  # Go panic
+        "ReferenceError",  # JS
+        "TypeError",  # JS / Python
+        "RuntimeError",  # Python
         "thread 'main' panicked",  # Rust
     )
     if any(sig in stderr for sig in _runtime_signals):

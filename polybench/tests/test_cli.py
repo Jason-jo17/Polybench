@@ -14,21 +14,26 @@ runner = CliRunner()
 def sample_task_json(tmp_path):
     t_dir = tmp_path / "tasks"
     t_dir.mkdir()
-    (t_dir / "t1.json").write_text(json.dumps({
-        "id": "python/test_task",
-        "language": "python",
-        "difficulty": "easy",
-        "title": "T",
-        "prompt": "P",
-        "signature": "S",
-        "test_code": "code",
-    }))
+    (t_dir / "t1.json").write_text(
+        json.dumps(
+            {
+                "id": "python/test_task",
+                "language": "python",
+                "difficulty": "easy",
+                "title": "T",
+                "prompt": "P",
+                "signature": "S",
+                "test_code": "code",
+            }
+        )
+    )
     return t_dir
 
 
 # ---------------------------------------------------------------------------
 # tasks subcommands
 # ---------------------------------------------------------------------------
+
 
 def test_cli_tasks_list(sample_task_json):
     res = runner.invoke(app, ["tasks", "list", "--tasks", str(sample_task_json)])
@@ -37,7 +42,10 @@ def test_cli_tasks_list(sample_task_json):
 
 
 def test_cli_tasks_list_tag_filter(sample_task_json):
-    res = runner.invoke(app, ["tasks", "list", "--tasks", str(sample_task_json), "--tags", "nonexistent"])
+    res = runner.invoke(
+        app,
+        ["tasks", "list", "--tasks", str(sample_task_json), "--tags", "nonexistent"],
+    )
     assert res.exit_code == 0
 
 
@@ -60,6 +68,7 @@ def test_cli_tasks_validate_fail(tmp_path):
 # run command
 # ---------------------------------------------------------------------------
 
+
 def test_cli_run_success(mocker, sample_task_json, tmp_db):
     mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
     mock_run_benchmark = mocker.patch("polybench.cli.run_benchmark")
@@ -68,52 +77,107 @@ def test_cli_run_success(mocker, sample_task_json, tmp_db):
     mock_record.pass_at_k = 0.95
     mock_run_benchmark.return_value = mock_record
 
-    res = runner.invoke(app, [
-        "run", "--provider", "mock", "--tasks", str(sample_task_json),
-        "--db", str(tmp_db), "--samples", "1", "-k", "1",
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "mock",
+            "--tasks",
+            str(sample_task_json),
+            "--db",
+            str(tmp_db),
+            "--samples",
+            "1",
+            "-k",
+            "1",
+        ],
+    )
     assert res.exit_code == 0, res.stdout
     assert "run-abc" in res.stdout
 
 
 def test_cli_run_dry_run(sample_task_json):
-    res = runner.invoke(app, [
-        "run", "--provider", "mock", "--tasks", str(sample_task_json),
-        "--dry-run",
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "mock",
+            "--tasks",
+            str(sample_task_json),
+            "--dry-run",
+        ],
+    )
     assert res.exit_code == 0
     assert "python/test_task" in res.stdout
 
 
 def test_cli_run_docker_unavailable(mocker, sample_task_json, tmp_db):
     mocker.patch("subprocess.run", side_effect=Exception("docker not found"))
-    res = runner.invoke(app, [
-        "run", "--provider", "mock", "--tasks", str(sample_task_json), "--db", str(tmp_db),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "mock",
+            "--tasks",
+            str(sample_task_json),
+            "--db",
+            str(tmp_db),
+        ],
+    )
     assert res.exit_code == 4
 
 
 def test_cli_run_invalid_provider(mocker, sample_task_json, tmp_db):
     mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
-    res = runner.invoke(app, [
-        "run", "--provider", "invalid_provider", "--tasks", str(sample_task_json), "--db", str(tmp_db),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "invalid_provider",
+            "--tasks",
+            str(sample_task_json),
+            "--db",
+            str(tmp_db),
+        ],
+    )
     assert res.exit_code == 1
 
 
 def test_cli_run_no_matching_tasks(mocker, sample_task_json, tmp_db):
-    res = runner.invoke(app, [
-        "run", "--provider", "mock", "--tasks", str(sample_task_json),
-        "--lang", "rust", "--dry-run",
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "mock",
+            "--tasks",
+            str(sample_task_json),
+            "--lang",
+            "rust",
+            "--dry-run",
+        ],
+    )
     assert res.exit_code == 2
 
 
 def test_cli_run_missing_anthropic_key(mocker, sample_task_json, tmp_db):
     mocker.patch("polybench.cli.settings.anthropic_api_key", None)
-    res = runner.invoke(app, [
-        "run", "--provider", "anthropic", "--tasks", str(sample_task_json), "--db", str(tmp_db),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "run",
+            "--provider",
+            "anthropic",
+            "--tasks",
+            str(sample_task_json),
+            "--db",
+            str(tmp_db),
+        ],
+    )
     assert res.exit_code == 3
 
 
@@ -121,21 +185,42 @@ def test_cli_run_missing_anthropic_key(mocker, sample_task_json, tmp_db):
 # report / compare
 # ---------------------------------------------------------------------------
 
+
 def test_cli_report(mocker, tmp_db, tmp_path):
     mocker.patch("polybench.cli.generate_report")
     out_file = tmp_path / "report.html"
-    res = runner.invoke(app, [
-        "report", "--run-id", "test-run", "--db", str(tmp_db), "--out", str(out_file),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "report",
+            "--run-id",
+            "test-run",
+            "--db",
+            str(tmp_db),
+            "--out",
+            str(out_file),
+        ],
+    )
     assert res.exit_code == 0
 
 
 def test_cli_report_error(mocker, tmp_db, tmp_path):
-    mocker.patch("polybench.cli.generate_report", side_effect=ValueError("Run not found"))
+    mocker.patch(
+        "polybench.cli.generate_report", side_effect=ValueError("Run not found")
+    )
     out_file = tmp_path / "report.html"
-    res = runner.invoke(app, [
-        "report", "--run-id", "test-run", "--db", str(tmp_db), "--out", str(out_file),
-    ])
+    res = runner.invoke(
+        app,
+        [
+            "report",
+            "--run-id",
+            "test-run",
+            "--db",
+            str(tmp_db),
+            "--out",
+            str(out_file),
+        ],
+    )
     assert res.exit_code == 1
     assert "run not found" in res.stdout.lower()
 
@@ -151,7 +236,9 @@ def test_cli_compare(mocker, tmp_db):
     mock_session.exec.return_value.all.side_effect = [res_a, res_b]
     mock_session.get.return_value = None
 
-    res = runner.invoke(app, ["compare", "--run-a", "a", "--run-b", "b", "--db", str(tmp_db)])
+    res = runner.invoke(
+        app, ["compare", "--run-a", "a", "--run-b", "b", "--db", str(tmp_db)]
+    )
     assert res.exit_code == 0
     assert "t1" in res.stdout
 
@@ -159,6 +246,7 @@ def test_cli_compare(mocker, tmp_db):
 # ---------------------------------------------------------------------------
 # history / export
 # ---------------------------------------------------------------------------
+
 
 def test_cli_history_empty(tmp_db):
     res = runner.invoke(app, ["history", "--db", str(tmp_db)])
@@ -168,9 +256,15 @@ def test_cli_history_empty(tmp_db):
 
 def test_cli_history_with_runs(tmp_db):
     from polybench.db import get_session
+
     run = BenchmarkRun(
-        model="mock-model", provider="mock", samples_per_task=1,
-        k=1, temperature=0.2, total_tasks=1, pass_at_k=1.0,
+        model="mock-model",
+        provider="mock",
+        samples_per_task=1,
+        k=1,
+        temperature=0.2,
+        total_tasks=1,
+        pass_at_k=1.0,
     )
     with get_session() as session:
         session.add(run)
@@ -184,30 +278,62 @@ def test_cli_history_with_runs(tmp_db):
 def test_cli_export_json(tmp_db, tmp_path):
     from polybench.db import get_session
     from polybench.models import TaskResult, Sample
+
     run = BenchmarkRun(
-        model="m", provider="mock", samples_per_task=1,
-        k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,
+        model="m",
+        provider="mock",
+        samples_per_task=1,
+        k=1,
+        temperature=0.0,
+        total_tasks=1,
+        pass_at_k=1.0,
     )
     with get_session() as session:
         session.add(run)
         session.commit()
         tr = TaskResult(
-            run_id=run.id, task_id="python/t", language="python", difficulty="easy",
-            samples_generated=1, samples_passed=1, task_pass_at_k=1.0,
+            run_id=run.id,
+            task_id="python/t",
+            language="python",
+            difficulty="easy",
+            samples_generated=1,
+            samples_passed=1,
+            task_pass_at_k=1.0,
         )
         session.add(tr)
         session.commit()
         s = Sample(
-            task_result_id=tr.id, sample_index=0, raw_output="```python\npass\n```",
-            extracted_code="pass", passed=True, failure_kind=None,
-            exit_code=0, stdout="", stderr="", runtime_ms=5, timed_out=False,
+            task_result_id=tr.id,
+            sample_index=0,
+            raw_output="```python\npass\n```",
+            extracted_code="pass",
+            passed=True,
+            failure_kind=None,
+            exit_code=0,
+            stdout="",
+            stderr="",
+            runtime_ms=5,
+            timed_out=False,
         )
         session.add(s)
         session.commit()
         run_id = run.id
 
     out = tmp_path / "out.json"
-    res = runner.invoke(app, ["export", "--run-id", run_id, "--db", str(tmp_db), "--format", "json", "--out", str(out)])
+    res = runner.invoke(
+        app,
+        [
+            "export",
+            "--run-id",
+            run_id,
+            "--db",
+            str(tmp_db),
+            "--format",
+            "json",
+            "--out",
+            str(out),
+        ],
+    )
     assert res.exit_code == 0
     data = json.loads(out.read_text())
     assert len(data) == 1
@@ -217,30 +343,62 @@ def test_cli_export_json(tmp_db, tmp_path):
 def test_cli_export_csv(tmp_db, tmp_path):
     from polybench.db import get_session
     from polybench.models import TaskResult, Sample
+
     run = BenchmarkRun(
-        model="m", provider="mock", samples_per_task=1,
-        k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,
+        model="m",
+        provider="mock",
+        samples_per_task=1,
+        k=1,
+        temperature=0.0,
+        total_tasks=1,
+        pass_at_k=1.0,
     )
     with get_session() as session:
         session.add(run)
         session.commit()
         tr = TaskResult(
-            run_id=run.id, task_id="python/t", language="python", difficulty="easy",
-            samples_generated=1, samples_passed=1, task_pass_at_k=1.0,
+            run_id=run.id,
+            task_id="python/t",
+            language="python",
+            difficulty="easy",
+            samples_generated=1,
+            samples_passed=1,
+            task_pass_at_k=1.0,
         )
         session.add(tr)
         session.commit()
         s = Sample(
-            task_result_id=tr.id, sample_index=0, raw_output="x",
-            extracted_code="x", passed=True, failure_kind=None,
-            exit_code=0, stdout="", stderr="", runtime_ms=5, timed_out=False,
+            task_result_id=tr.id,
+            sample_index=0,
+            raw_output="x",
+            extracted_code="x",
+            passed=True,
+            failure_kind=None,
+            exit_code=0,
+            stdout="",
+            stderr="",
+            runtime_ms=5,
+            timed_out=False,
         )
         session.add(s)
         session.commit()
         run_id = run.id
 
     out = tmp_path / "out.csv"
-    res = runner.invoke(app, ["export", "--run-id", run_id, "--db", str(tmp_db), "--format", "csv", "--out", str(out)])
+    res = runner.invoke(
+        app,
+        [
+            "export",
+            "--run-id",
+            run_id,
+            "--db",
+            str(tmp_db),
+            "--format",
+            "csv",
+            "--out",
+            str(out),
+        ],
+    )
     assert res.exit_code == 0
     assert "task_id" in out.read_text()
 
@@ -252,15 +410,23 @@ def test_cli_export_not_found(tmp_db):
 
 def test_cli_export_bad_format(tmp_db):
     from polybench.db import get_session
+
     run = BenchmarkRun(
-        model="m", provider="mock", samples_per_task=1,
-        k=1, temperature=0.0, total_tasks=1, pass_at_k=1.0,
+        model="m",
+        provider="mock",
+        samples_per_task=1,
+        k=1,
+        temperature=0.0,
+        total_tasks=1,
+        pass_at_k=1.0,
     )
     with get_session() as session:
         session.add(run)
         session.commit()
         run_id = run.id
-    res = runner.invoke(app, ["export", "--run-id", run_id, "--db", str(tmp_db), "--format", "xml"])
+    res = runner.invoke(
+        app, ["export", "--run-id", run_id, "--db", str(tmp_db), "--format", "xml"]
+    )
     assert res.exit_code == 1
 
 
@@ -268,15 +434,16 @@ def test_cli_export_bad_format(tmp_db):
 # sandbox-test
 # ---------------------------------------------------------------------------
 
+
 def test_cli_sandbox_test(mocker):
     mocker.patch("subprocess.run", return_value=MagicMock(returncode=0))
     mock_sandbox = MagicMock()
     mocker.patch("polybench.cli.SandboxRunner", return_value=mock_sandbox)
     # Network blocked (exit 1), FS blocked (exit 1), PID survived (exit 0)
     mock_sandbox.run.side_effect = [
-        MagicMock(exit_code=1),   # net probe: non-zero = isolated ✓
-        MagicMock(exit_code=1),   # FS probe: non-zero = isolated ✓
-        MagicMock(exit_code=0),   # PID probe: any result is OK
+        MagicMock(exit_code=1),  # net probe: non-zero = isolated ✓
+        MagicMock(exit_code=1),  # FS probe: non-zero = isolated ✓
+        MagicMock(exit_code=0),  # PID probe: any result is OK
     ]
     res = runner.invoke(app, ["sandbox-test"])
     assert res.exit_code == 0, res.stdout
@@ -297,6 +464,7 @@ def test_cli_sandbox_test_net_fail(mocker):
 # ---------------------------------------------------------------------------
 # compass
 # ---------------------------------------------------------------------------
+
 
 def test_cli_compass_no_keys(mocker):
     mocker.patch("polybench.cli.settings.anthropic_api_key", None)

@@ -2,18 +2,18 @@ import re
 
 # Maps canonical language name to fence tags models commonly emit.
 _LANG_ALIASES: dict[str, list[str]] = {
-    "python":     ["python", "py", "python3"],
+    "python": ["python", "py", "python3"],
     "javascript": ["javascript", "js", "typescript", "ts", "node"],
-    "go":         ["go", "golang"],
-    "rust":       ["rust", "rs"],
+    "go": ["go", "golang"],
+    "rust": ["rust", "rs"],
 }
 
 # Keywords that indicate plausible raw code (no fence) for a given language.
 _LANG_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "python":     ("def ", "class "),
+    "python": ("def ", "class "),
     "javascript": ("function ", "const ", "let ", "var ", "export "),
-    "go":         ("func ", "package "),
-    "rust":       ("fn ", "pub fn ", "impl "),
+    "go": ("func ", "package "),
+    "rust": ("fn ", "pub fn ", "impl "),
 }
 
 

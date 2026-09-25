@@ -3,10 +3,11 @@ from typing import Optional
 
 from polybench.schemas import Task, Difficulty
 
+
 class TaskRegistry:
     def __init__(self, tasks: Iterable[Task]) -> None:
         self._tasks = list(tasks)
-        
+
     def filter(
         self,
         lang: Optional[str] = None,
