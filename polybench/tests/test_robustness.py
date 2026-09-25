@@ -8,14 +8,8 @@ from polybench.providers.openai_compatible import OpenAICompatibleProvider
 
 
 def test_setup_command(mocker):
-    mock_run = mocker.patch("subprocess.run")
-    mock_run.side_effect = [
-        MagicMock(returncode=0),  # docker info
-        MagicMock(returncode=0),  # inspect python
-        MagicMock(returncode=0),  # inspect node
-        MagicMock(returncode=0),  # inspect go
-        MagicMock(returncode=0),  # inspect rust
-    ]
+    check = mocker.patch("polybench.cli._check_docker")
+    build = mocker.patch("polybench.cli._build_images")
     from typer.testing import CliRunner
     from polybench.cli import app
 
@@ -23,6 +17,8 @@ def test_setup_command(mocker):
     res = runner.invoke(app, ["setup"])
     assert res.exit_code == 0
     assert "setup complete" in res.stdout.lower()
+    check.assert_called_once()
+    build.assert_called_once()
 
 
 def test_anthropic_retries(mocker):

@@ -1,6 +1,7 @@
 import pytest
 from sqlmodel import SQLModel
-from polybench.db import init_db, engine
+import polybench.db
+from polybench.db import init_db
 from polybench.providers.mock_provider import MockProvider
 from polybench.schemas import Task, Language, Difficulty
 
@@ -10,8 +11,9 @@ def tmp_db(tmp_path):
     db_file = tmp_path / "test.db"
     init_db(f"sqlite:///{db_file}")
     yield db_file
-    if engine:
-        SQLModel.metadata.drop_all(engine)
+    if polybench.db.engine is not None:
+        SQLModel.metadata.drop_all(polybench.db.engine)
+        polybench.db.engine.dispose()
 
 
 @pytest.fixture

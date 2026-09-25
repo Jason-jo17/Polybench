@@ -550,3 +550,61 @@ def test_cli_compass_openai_pass(mocker):
     res = runner.invoke(app, ["compass"])
     assert res.exit_code == 0
     assert "PASS" in res.stdout
+
+
+# ---------------------------------------------------------------------------
+# sandbox image builds
+# ---------------------------------------------------------------------------
+
+
+def _docker_images(mocker, labels: dict[str, str | None], build_rc: int = 0):
+    """Fake `docker image inspect` / `docker build`; returns the list of built tags."""
+    built: list[str] = []
+
+    def fake_run(cmd, *args, **kwargs):
+        if cmd[1:3] == ["image", "inspect"]:
+            label = labels.get(cmd[-1])
+            return MagicMock(returncode=1 if label is None else 0, stdout=label or "")
+        if cmd[1] == "build":
+            built.append(cmd[cmd.index("-t") + 1])
+            return MagicMock(returncode=build_rc)
+        raise AssertionError(cmd)
+
+    mocker.patch("polybench.cli.subprocess.run", side_effect=fake_run)
+    return built
+
+
+def test_build_images_skips_up_to_date_and_rebuilds_changed(mocker):
+    import hashlib
+
+    from polybench.cli import _build_images
+    from polybench.config import PROJECT_ROOT
+
+    def sha(name):
+        return hashlib.sha256(
+            (PROJECT_ROOT / "sandbox" / name).read_bytes()
+        ).hexdigest()
+
+    built = _docker_images(
+        mocker,
+        {
+            "polybench-python:local": sha("Dockerfile.python"),  # up to date
+            "polybench-node:local": "stale-hash",  # Dockerfile changed
+            "polybench-go:local": None,  # missing
+            "polybench-rust:local": sha("Dockerfile.rust"),
+        },
+    )
+
+    _build_images()
+
+    assert built == ["polybench-node:local", "polybench-go:local"]
+
+
+def test_build_images_exits_cleanly_when_docker_build_fails(mocker):
+    import typer
+
+    from polybench.cli import _build_images
+
+    _docker_images(mocker, {}, build_rc=1)
+    with pytest.raises(typer.Exit):
+        _build_images()

@@ -5,6 +5,7 @@ import threading
 from sqlmodel import Session
 from rich.progress import Progress
 
+from polybench.config import settings
 from polybench.schemas import Task, Language
 from polybench.models import BenchmarkRun, TaskResult, Sample
 from polybench.providers.base import LLMProvider
@@ -202,7 +203,7 @@ def run_benchmark(
                     pass_counts[task.id] += 1
                 progress.advance(bar)
 
-        max_workers = min(8, len(jobs)) if jobs else 1
+        max_workers = max(1, min(settings.polybench_sandbox_workers, len(jobs)))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(worker, t, i, tr_id) for t, i, tr_id in jobs]
             for future in concurrent.futures.as_completed(futures):

@@ -1,148 +1,189 @@
-import pytest
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock
-from polybench.schemas import Task, Language, Difficulty
+
+import pytest
+
+from polybench.sandbox.policy import STARTUP_ALLOWANCE_S
 from polybench.sandbox.runner import (
     SandboxRunner,
-    _cleanup_containers,
     _active_containers,
+    _as_text,
+    _cleanup_containers,
 )
+from polybench.schemas import Difficulty, Language, Task
 
 
-def test_sandbox_standard_language(mocker):
-    # Mock subprocess.run
-    mock_run = mocker.patch("subprocess.run")
-    mock_proc = MagicMock()
-    mock_proc.stdout = "pytest stdout"
-    mock_proc.stderr = "pytest stderr"
-    mock_proc.returncode = 0
-    mock_run.return_value = mock_proc
+class FakeDocker:
+    """Stands in for subprocess.run and answers each docker command by its verb.
 
-    task = Task(
-        id="python/test_task",
-        language=Language.python,
+    `docker run` gets `run_result` (a CompletedProcess-like object, or an exception
+    to raise). Files copied into the volume are captured at `docker cp` time,
+    because the temporary directory is deleted afterwards.
+    """
+
+    def __init__(self, run_result=None, fail_on: str | None = None):
+        self.run_result = run_result or MagicMock(stdout="ok", stderr="", returncode=0)
+        self.fail_on = fail_on
+        self.calls: list[list[str]] = []
+        self.run_kwargs: dict = {}
+        self.copied: dict[str, str] = {}
+
+    def __call__(self, cmd, *args, **kwargs):
+        self.calls.append(cmd)
+        verb = " ".join(cmd[1:3]) if cmd[1] == "volume" else cmd[1]
+        if verb == self.fail_on:
+            raise subprocess.CalledProcessError(1, cmd)
+        if verb == "cp":
+            src = Path(cmd[2].rstrip(".").rstrip("/\\"))
+            self.copied = {p.name: p.read_text(encoding="utf-8") for p in src.iterdir()}
+        if verb == "run":
+            self.run_kwargs = kwargs
+            if isinstance(self.run_result, BaseException):
+                raise self.run_result
+            return self.run_result
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    def verbs(self) -> list[str]:
+        return [" ".join(c[1:3]) if c[1] == "volume" else c[1] for c in self.calls]
+
+    def run_cmd(self) -> list[str]:
+        return next(c for c in self.calls if c[1] == "run")
+
+
+def _task(language=Language.python, **extra) -> Task:
+    return Task(
+        id=f"{language}/t",
+        language=language,
         difficulty=Difficulty.easy,
-        title="Standard Task",
-        prompt="Write print(1)",
-        signature="print(1)",
-        test_code="assert True",
+        title="T",
+        prompt="P",
+        signature="S",
+        test_code="TEST CODE",
+        timeout_seconds=7,
+        **extra,
     )
 
-    runner = SandboxRunner()
-    res = runner.run("print(1)", task)
 
-    assert res.exit_code == 0
-    assert res.stdout == "pytest stdout"
-    assert res.stderr == "pytest stderr"
-    assert not res.timed_out
-    assert res.runtime_ms >= 0
+def test_run_uses_isolation_flags_and_in_container_timeout(mocker):
+    docker = FakeDocker(MagicMock(stdout="3 passed", stderr="", returncode=0))
+    mocker.patch("subprocess.run", side_effect=docker)
 
-    # Verify that docker run was called with correct arguments
-    calls = mock_run.call_args_list
-    assert len(calls) == 1
-    args, kwargs = calls[0]
-    cmd = args[0]
-    assert cmd[0] == "docker"
-    assert cmd[1] == "run"
-    assert "polybench-python:local" in cmd
-    assert "test_solution.py" in cmd
+    res = SandboxRunner().run("print(1)", _task())
 
-
-def test_sandbox_unsupported_language_no_overrides():
-    # Use a language with no built-in spec and no task-level overrides.
-    task = Task(
-        id="cobol/test_task",
-        language="cobol",
-        difficulty=Difficulty.easy,
-        title="Unsupported Language",
-        prompt="Write COBOL",
-        signature="PROCEDURE DIVISION.",
-        test_code="STOP RUN.",
-    )
-
-    runner = SandboxRunner()
-    with pytest.raises(ValueError) as excinfo:
-        runner.run("PROCEDURE DIVISION. STOP RUN.", task)
-
-    assert "requires custom sandbox spec fields" in str(excinfo.value)
+    assert res.exit_code == 0 and res.stdout == "3 passed" and not res.timed_out
+    cmd = docker.run_cmd()
+    for flag in (
+        "--network",
+        "none",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--user=10001:10001",
+    ):
+        assert flag in cmd
+    assert "--security-opt=no-new-privileges:true" in cmd
+    assert any(f.startswith("--tmpfs=/tmp:") and "noexec" in f for f in cmd)
+    # The task's limit applies to the tests only; start-up gets a separate allowance.
+    image_at = cmd.index("polybench-python:local")
+    assert cmd[image_at + 1 : image_at + 3] == ["timeout", "7"]
+    assert cmd[-1] == "test_solution.py"
+    assert docker.run_kwargs["timeout"] == 7 + STARTUP_ALLOWANCE_S
+    # Only the code and the hidden tests are copied in, and nothing is left behind.
+    assert docker.copied == {"solution.py": "print(1)", "test_solution.py": "TEST CODE"}
+    assert docker.verbs()[-1] == "volume rm"
+    assert not _active_containers
 
 
-def test_sandbox_custom_language_with_overrides(mocker):
-    mock_run = mocker.patch("subprocess.run")
-    mock_proc = MagicMock()
-    mock_proc.stdout = "cargo test stdout"
-    mock_proc.stderr = "cargo test stderr"
-    mock_proc.returncode = 0
-    mock_run.return_value = mock_proc
+def test_go_gets_go_mod_and_an_executable_tmp(mocker):
+    docker = FakeDocker()
+    mocker.patch("subprocess.run", side_effect=docker)
 
-    task = Task(
-        id="rust/test_task",
-        language="rust",
-        difficulty=Difficulty.easy,
-        title="Custom Task",
-        prompt="Write Rust",
-        signature="fn main() {}",
-        test_code="fn test() {}",
-        image="polybench-rust:local",
+    SandboxRunner().run("package solution", _task(Language.go))
+
+    assert docker.copied["go.mod"].startswith("module solution")
+    assert set(docker.copied) == {"go.mod", "solution.go", "solution_test.go"}
+    tmpfs = next(f for f in docker.run_cmd() if f.startswith("--tmpfs="))
+    assert "exec" in tmpfs and "noexec" not in tmpfs
+    # Compilation runs first, outside the time limit; only the test binary is timed.
+    shell, flag, script = docker.run_cmd()[-3:]
+    assert (shell, flag) == ("sh", "-c")
+    build, timed = script.split(" && exec ")
+    assert "go test -c" in build
+    assert timed == "timeout 7 /tmp/solution.test"
+
+
+def test_task_level_sandbox_overrides(mocker):
+    docker = FakeDocker(MagicMock(stdout="cargo out", stderr="cargo err", returncode=0))
+    mocker.patch("subprocess.run", side_effect=docker)
+    task = _task(
+        "rust",
+        image="custom-rust:latest",
         code_file="main.rs",
         test_file="test_main.rs",
         test_cmd=["cargo", "test"],
     )
 
-    runner = SandboxRunner()
-    res = runner.run("fn main() {}", task)
+    res = SandboxRunner().run("fn main() {}", task)
 
-    assert res.exit_code == 0
-    assert res.stdout == "cargo test stdout"
-    assert res.stderr == "cargo test stderr"
-    assert not res.timed_out
-
-    # Verify the docker run args
-    calls = mock_run.call_args_list
-    assert len(calls) == 1
-    args, _ = calls[0]
-    cmd = args[0]
-    assert "polybench-rust:local" in cmd
-    assert cmd[-2:] == ["cargo", "test"]
-
-
-def test_sandbox_timeout(mocker):
-    # Mock subprocess.run to raise TimeoutExpired on the first run, and return success on the kill run
-    mock_run = mocker.patch("subprocess.run")
-    mock_run.side_effect = [
-        subprocess.TimeoutExpired(
-            cmd=["docker", "run"],
-            timeout=5,
-            output=b"partial stdout",
-            stderr=b"partial stderr",
-        ),
-        MagicMock(returncode=0),  # docker kill
+    assert (res.stdout, res.stderr) == ("cargo out", "cargo err")
+    assert docker.run_cmd()[-5:] == [
+        "custom-rust:latest",
+        "timeout",
+        "7",
+        "cargo",
+        "test",
     ]
+    assert set(docker.copied) == {"main.rs", "test_main.rs"}
 
-    task = Task(
-        id="python/timeout_task",
-        language=Language.python,
-        difficulty=Difficulty.easy,
-        title="Timeout Task",
-        prompt="loop forever",
-        signature="while True: pass",
-        test_code="pass",
-        timeout_seconds=2,
+
+@pytest.mark.parametrize("exit_code", [124, 143])
+def test_in_container_timeout_is_reported_as_timed_out(mocker, exit_code):
+    docker = FakeDocker(MagicMock(stdout="", stderr="", returncode=exit_code))
+    mocker.patch("subprocess.run", side_effect=docker)
+
+    res = SandboxRunner().run("while True: pass", _task())
+
+    assert res.timed_out and res.exit_code == exit_code
+
+
+@pytest.mark.parametrize(
+    "out, err", [(b"partial out", b"partial err"), ("partial out", "partial err")]
+)
+def test_stalled_container_is_killed_and_partial_output_kept(mocker, out, err):
+    stall = subprocess.TimeoutExpired(
+        cmd=["docker", "run"], timeout=1, output=out, stderr=err
     )
+    docker = FakeDocker(stall)
+    mocker.patch("subprocess.run", side_effect=docker)
 
-    runner = SandboxRunner()
-    res = runner.run("while True: pass", task)
+    res = SandboxRunner().run("while True: pass", _task())
 
-    assert res.timed_out
-    assert res.exit_code is None
-    assert res.stdout == "partial stdout"
-    assert res.stderr == "partial stderr"
+    assert res.timed_out and res.exit_code is None
+    assert (res.stdout, res.stderr) == ("partial out", "partial err")
+    assert "kill" in docker.verbs()
+    assert docker.verbs()[-1] == "volume rm"
 
-    # Verify docker kill was called
-    assert mock_run.call_count == 2
-    kill_args, _ = mock_run.call_args_list[1]
-    assert kill_args[0][0] == "docker"
-    assert kill_args[0][1] == "kill"
+
+def test_setup_failure_still_cleans_up(mocker):
+    docker = FakeDocker(fail_on="cp")
+    mocker.patch("subprocess.run", side_effect=docker)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        SandboxRunner().run("print(1)", _task())
+
+    assert "run" not in docker.verbs()
+    assert docker.verbs()[-2:] == ["rm", "volume rm"]
+
+
+def test_unsupported_language_without_overrides_is_rejected():
+    with pytest.raises(ValueError, match="requires custom sandbox spec fields"):
+        SandboxRunner().run("PROCEDURE DIVISION.", _task("cobol"))
+
+
+def test_as_text_accepts_bytes_str_and_none():
+    assert _as_text(b"caf\xc3\xa9") == "café"
+    assert _as_text("text") == "text"
+    assert _as_text(None) == ""
 
 
 def test_cleanup_containers(mocker):
