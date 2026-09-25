@@ -806,7 +806,7 @@ def backup(
 ) -> None:
     """Create a timestamped backup copy of the SQLite database."""
     import shutil
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     src = Path(db)
     if not src.exists():
@@ -814,7 +814,7 @@ def backup(
         raise typer.Exit(1)
 
     if out is None:
-        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         out = src.with_suffix(f".bak.{ts}.db")
 
     shutil.copy2(src, out)

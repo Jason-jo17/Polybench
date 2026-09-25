@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import SQLModel, Field
 import uuid
@@ -8,9 +8,15 @@ def _id() -> str:
     return uuid.uuid4().hex
 
 
+def utc_now() -> datetime:
+    """Current UTC time as a naive datetime. Timestamps are stored without a
+    zone and are always UTC; the dashboard reads them that way."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class BenchmarkRun(SQLModel, table=True):
     id: str = Field(default_factory=_id, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     model: str
     provider: str
     language_filter: str | None = None
@@ -25,7 +31,7 @@ class BenchmarkRun(SQLModel, table=True):
 
 class TaskResult(SQLModel, table=True):
     id: str = Field(default_factory=_id, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     run_id: str = Field(foreign_key="benchmarkrun.id", index=True)
     task_id: str = Field(index=True)
     language: str
@@ -39,7 +45,7 @@ class TaskResult(SQLModel, table=True):
 
 class Sample(SQLModel, table=True):
     id: str = Field(default_factory=_id, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
     task_result_id: str = Field(foreign_key="taskresult.id", index=True)
     sample_index: int
     raw_output: str

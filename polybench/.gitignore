@@ -36,3 +36,6 @@ report.html
 # SQLite sidecar files
 *.db-shm
 *.db-wal
+
+# Local MCP client config (copy mcp_config.example.json)
+mcp_config.json

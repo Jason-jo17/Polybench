@@ -116,7 +116,7 @@ This starts Postgres, the API and the dashboard. The dashboard is at http://loca
 
 ### From an AI agent (MCP)
 
-Add PolyBench to your MCP client's configuration, for example `claude_desktop_config.json`:
+Add PolyBench to your MCP client's configuration, for example `claude_desktop_config.json`. [`mcp_config.example.json`](polybench/mcp_config.example.json) has the same snippet:
 
 ```json
 {

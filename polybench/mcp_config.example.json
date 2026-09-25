@@ -3,7 +3,7 @@
     "polybench": {
       "command": "uv",
       "args": ["run", "python", "-m", "polybench.server"],
-      "cwd": "c:/Polybench/polybench"
+      "cwd": "/absolute/path/to/Polybench/polybench"
     }
   }
 }
