@@ -23,6 +23,10 @@ export default function RunDetail({ params }: { params: Promise<{ id: string }> 
   const [data, setData] = useState<RunResults | null>(null);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  // ?task=<id> (linked from a task's page) opens that task's sample first.
+  const [focusTask] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("task"),
+  );
 
   useEffect(() => {
     let alive = true;
@@ -62,14 +66,16 @@ export default function RunDetail({ params }: { params: Promise<{ id: string }> 
       runtime += s.runtime_ms;
     }
     const failureList = [...failures.entries()].sort((a, b) => b[1] - a[1]);
-    const firstFail = data.samples.find((s) => !s.passed);
+    const focusResult = focusTask ? data.results.find((r) => r.task_id === focusTask) : undefined;
+    const pool = focusResult ? byResult.get(focusResult.id) ?? [] : data.samples;
+    const firstFail = pool.find((s) => !s.passed) ?? pool[0];
     return {
       byResult, results, failureList, passedSamples, tokensIn, tokensOut,
       avgRuntime: data.samples.length ? Math.round(runtime / data.samples.length) : 0,
       solved: data.results.filter((r) => r.samples_passed > 0).length,
       firstFail: firstFail?.id ?? data.samples[0]?.id ?? null,
     };
-  }, [data]);
+  }, [data, focusTask]);
 
   const current = selected ?? derived?.firstFail ?? null;
 

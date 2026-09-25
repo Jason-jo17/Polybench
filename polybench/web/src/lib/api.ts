@@ -24,6 +24,25 @@ export interface TaskScore {
   samples_done: number;
 }
 
+export interface TaskRunResult {
+  run_id: string;
+  model: string;
+  provider: string;
+  status: RunStatus;
+  created_at: string;
+  k: number;
+  samples_done: number;
+  samples_passed: number;
+  pass_at_k: number;
+}
+
+export interface TaskHistory {
+  task_id: string;
+  runs: TaskRunResult[];
+  /** failed samples by failure kind, across all runs */
+  failures: Record<string, number>;
+}
+
 /** A run from `/runs?include=task_scores`. */
 export type RunWithScores = Run & { task_scores: TaskScore[] };
 
