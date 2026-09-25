@@ -142,34 +142,71 @@ def _run_threads_inline(monkeypatch):
     monkeypatch.setattr(threading, "Thread", Inline)
 
 
-def test_api_start_resumes_interrupted_runs(tmp_db, monkeypatch):
-    import polybench.api.main as api
+def test_interrupted_runs_are_resumed(tmp_db, monkeypatch):
+    import polybench.core.runs as core_runs
 
     with get_session() as session:
         run_id = _interrupted_run(session)
     calls = []
     monkeypatch.setattr(
-        api, "execute_benchmark_run", lambda rid, cfg, *a: calls.append((rid, cfg.n))
+        core_runs, "execute_run", lambda rid, plan: calls.append((rid, plan.cfg.n))
     )
-    monkeypatch.setattr(settings, "polybench_resume_runs", True)
     _run_threads_inline(monkeypatch)
+    tasks_dir = _tasks_dir(monkeypatch)
 
-    api._handle_interrupted_runs()
-
+    assert core_runs.handle_interrupted_runs(tasks_dir, resume=True) == 1
     assert calls == [(run_id, 3)]
 
 
-def test_api_start_can_mark_interrupted_runs_failed_instead(tmp_db, monkeypatch):
-    import polybench.api.main as api
+def test_interrupted_runs_can_be_marked_failed_instead(tmp_db, monkeypatch):
+    import polybench.core.runs as core_runs
 
     with get_session() as session:
         run_id = _interrupted_run(session)
-    monkeypatch.setattr(settings, "polybench_resume_runs", False)
 
-    api._handle_interrupted_runs()
+    assert core_runs.handle_interrupted_runs("unused", resume=False) == 1
+    with get_session() as session:
+        assert session.get(BenchmarkRun, run_id).status == "FAILED"
+
+
+def test_a_run_that_cannot_be_resumed_is_marked_failed(tmp_db, monkeypatch, tmp_path):
+    import polybench.core.runs as core_runs
+
+    with get_session() as session:
+        run_id = _interrupted_run(session)
+    _run_threads_inline(monkeypatch)
+    empty = tmp_path / "no-tasks"
+    empty.mkdir()
+
+    core_runs.handle_interrupted_runs(empty, resume=True)
 
     with get_session() as session:
         assert session.get(BenchmarkRun, run_id).status == "FAILED"
+
+
+def test_api_start_uses_the_resume_setting(tmp_db, monkeypatch):
+    import polybench.api.main as api
+
+    seen = []
+    monkeypatch.setattr(
+        api.core_runs,
+        "handle_interrupted_runs",
+        lambda d, resume: seen.append(resume) or 0,
+    )
+    monkeypatch.setattr(settings, "polybench_resume_runs", False)
+    api._handle_interrupted_runs()
+    monkeypatch.setattr(settings, "polybench_resume_runs", True)
+    api._handle_interrupted_runs()
+    assert seen == [False, True]
+
+
+def _tasks_dir(monkeypatch):
+    import tempfile
+    from pathlib import Path
+
+    d = Path(tempfile.mkdtemp())
+    (d / "t.json").write_text(json.dumps(_task().model_dump(mode="json")))
+    return d
 
 
 def test_cli_resume_finishes_an_interrupted_run(tmp_db, tmp_path, mocker):

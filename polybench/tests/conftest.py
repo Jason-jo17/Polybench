@@ -33,3 +33,12 @@ def sample_task():
         test_code="def check(): pass",
         tags=["test"],
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_docker_for_background_runs(monkeypatch):
+    """Tests never need Docker: background runs skip the real image check."""
+    import polybench.core.runs as core_runs
+
+    monkeypatch.setattr(core_runs, "docker_available", lambda: True)
+    monkeypatch.setattr(core_runs, "ensure_images", lambda *a, **k: None)

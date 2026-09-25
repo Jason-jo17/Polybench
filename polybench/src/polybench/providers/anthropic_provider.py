@@ -17,10 +17,13 @@ _SYSTEM = (
 class AnthropicProvider(LLMProvider):
     _API_TIMEOUT = 120.0  # seconds before treating call as hung
 
-    def __init__(self, model: str, temperature: float = 0.2) -> None:
+    def __init__(
+        self, model: str, temperature: float = 0.2, api_key: str | None = None
+    ) -> None:
         self.model = model
         self.temperature = temperature
-        self.client = anthropic.Anthropic(timeout=self._API_TIMEOUT)
+        # With api_key=None the client falls back to the ANTHROPIC_API_KEY env var.
+        self.client = anthropic.Anthropic(api_key=api_key, timeout=self._API_TIMEOUT)
 
     def generate(self, prompt: str) -> GenerationResult:
         start = time.perf_counter()
