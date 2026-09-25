@@ -220,6 +220,16 @@ def list_tasks(
     return [public_task(t) for t in tasks]
 
 
+# Declared before the single-task route: task IDs contain "/", and that route's
+# {task_id:path} would otherwise swallow the "/results" suffix.
+@app.get("/api/tasks/{task_id:path}/results")
+def get_task_history(task_id: str, session: SessionDep) -> dict[str, Any]:
+    """How a task has scored in every run that included it, newest first."""
+    if find_task(_TASKS_DEFAULT, task_id) is None:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+    return core_runs.task_history(session, task_id)
+
+
 @app.get("/api/tasks/{task_id:path}")
 def get_task(task_id: str) -> dict[str, Any]:
     """Fetch a single task by its ID (e.g. python/lru_cache)."""

@@ -3,17 +3,21 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { EyeOff } from "lucide-react";
-import { api, type Task } from "@/lib/api";
-import { Difficulty, Empty, Lang, Skeleton } from "@/components/ui";
+import { api, absoluteTime, humanize, relativeTime, type Task, type TaskHistory } from "@/lib/api";
+import { Difficulty, Empty, Lang, Score, Skeleton, Status } from "@/components/ui";
 
 export default function TaskDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const taskId = decodeURIComponent(id);
   const [task, setTask] = useState<Task | null>(null);
   const [error, setError] = useState("");
+  const [history, setHistory] = useState<TaskHistory | null>(null);
 
   useEffect(() => {
     api<Task>(`/tasks/${encodeURIComponent(taskId)}`).then(setTask).catch((e: Error) => setError(e.message));
+    api<TaskHistory>(`/tasks/${encodeURIComponent(taskId)}/results`)
+      .then(setHistory)
+      .catch(() => setHistory({ task_id: taskId, runs: [], failures: {} }));
   }, [taskId]);
 
   const crumbs = (
@@ -85,6 +89,72 @@ export default function TaskDetail({ params }: { params: Promise<{ id: string }>
           </div>
         </div>
       </div>
+
+      <TaskResults history={history} taskId={taskId} />
     </>
+  );
+}
+
+function TaskResults({ history, taskId }: { history: TaskHistory | null; taskId: string }) {
+  const failures = Object.entries(history?.failures ?? {}).sort((a, b) => b[1] - a[1]);
+  const totalFailed = failures.reduce((n, [, c]) => n + c, 0);
+  return (
+    <section className="section" aria-labelledby="history-title">
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
+        <h2 className="h2" id="history-title">Results across runs</h2>
+        {totalFailed > 0 && (
+          <div className="row" style={{ gap: 6 }} aria-label="Why samples failed, across all runs">
+            <span className="sub" style={{ marginRight: 4 }}>Failed samples:</span>
+            {failures.map(([kind, count]) => (
+              <span key={kind} className="chip">{humanize(kind)} {count}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="panel">
+        {history && history.runs.length === 0 ? (
+          <Empty title="No run has included this task yet">
+            Start a run that covers this task&apos;s language to see how models do on it.
+          </Empty>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Status</th>
+                  <th className="num">Samples passed</th>
+                  <th className="num">pass@k</th>
+                  <th>Run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history === null ? (
+                  <tr><td colSpan={5}><Skeleton w="60%" /></td></tr>
+                ) : history.runs.map((r) => (
+                  <tr key={r.run_id}>
+                    <td>
+                      <Link href={`/runs/${r.run_id}?task=${encodeURIComponent(taskId)}`} className="model">
+                        {r.model}
+                        <small>{r.provider}</small>
+                      </Link>
+                    </td>
+                    <td><Status status={r.status} /></td>
+                    <td className="num">{r.samples_passed} / {r.samples_done}</td>
+                    <td className="num">
+                      {r.samples_done === 0 ? <span className="muted">—</span> : <Score value={r.pass_at_k} digits={0} />}
+                      <span className="muted" style={{ fontSize: 12.5 }}> @{r.k}</span>
+                    </td>
+                    <td className="muted" title={absoluteTime(r.created_at)} style={{ whiteSpace: "nowrap" }}>
+                      {relativeTime(r.created_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

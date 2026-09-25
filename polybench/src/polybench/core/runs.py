@@ -239,6 +239,42 @@ def task_scores(
     return scores
 
 
+def task_history(session: Session, task_id: str) -> dict[str, Any]:
+    """How one task has scored across runs, newest run first, plus how its
+    failed samples broke down by failure kind over all those runs."""
+    rows = session.exec(
+        select(TaskResult, BenchmarkRun)
+        .join(BenchmarkRun, col(BenchmarkRun.id) == col(TaskResult.run_id))
+        .where(TaskResult.task_id == task_id)
+        .order_by(col(BenchmarkRun.created_at).desc())
+    ).all()
+    runs = [
+        {
+            "run_id": run.id,
+            "model": run.model,
+            "provider": run.provider,
+            "status": run.status,
+            "created_at": run.created_at.isoformat(),
+            "k": run.k,
+            "samples_done": tr.samples_generated,
+            "samples_passed": tr.samples_passed,
+            "pass_at_k": tr.task_pass_at_k,
+        }
+        for tr, run in rows
+    ]
+    failures: dict[str, int] = {}
+    result_ids = [tr.id for tr, _ in rows]
+    if result_ids:
+        kinds = session.exec(
+            select(Sample.failure_kind, func.count())
+            .where(col(Sample.task_result_id).in_(result_ids))
+            .where(col(Sample.passed).is_(False))
+            .group_by(col(Sample.failure_kind))
+        ).all()
+        failures = {kind or "unknown": count for kind, count in kinds}
+    return {"task_id": task_id, "runs": runs, "failures": failures}
+
+
 def task_results(session: Session, run_id: str) -> list[TaskResult]:
     stmt = (
         select(TaskResult)

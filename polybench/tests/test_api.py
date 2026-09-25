@@ -209,3 +209,59 @@ def test_runs_without_include_have_no_task_scores(client):
 
 def test_runs_reject_unknown_include(client):
     assert client.get("/api/runs?include=samples").status_code == 400
+
+
+def test_task_history_lists_runs_newest_first_with_failure_breakdown(client):
+    from polybench.db import get_session
+    from polybench.models import Sample, TaskResult
+
+    older, newer = _add_runs("old-model", "new-model")
+    with get_session() as session:
+        for run_id, outcomes in [(older, [True, False]), (newer, [False, False])]:
+            tr = TaskResult(
+                run_id=run_id,
+                task_id="python/two_sum",
+                language="python",
+                difficulty="easy",
+                samples_generated=len(outcomes),
+                samples_passed=sum(outcomes),
+                task_pass_at_k=sum(outcomes) / len(outcomes),
+            )
+            session.add(tr)
+            session.commit()
+            for i, passed in enumerate(outcomes):
+                kind = (
+                    None
+                    if passed
+                    else ("compile_error" if run_id == newer else "wrong_output")
+                )
+                session.add(
+                    Sample(
+                        task_result_id=tr.id,
+                        sample_index=i,
+                        raw_output="",
+                        passed=passed,
+                        failure_kind=kind,
+                    )
+                )
+        session.commit()
+
+    history = client.get("/api/tasks/python/two_sum/results").json()
+
+    assert history["task_id"] == "python/two_sum"
+    assert [r["model"] for r in history["runs"]] == ["new-model", "old-model"]
+    assert history["runs"][1]["samples_passed"] == 1
+    assert history["failures"] == {"compile_error": 2, "wrong_output": 1}
+
+
+def test_task_history_for_a_task_no_run_included_is_empty(client):
+    history = client.get("/api/tasks/go/stack/results").json()
+    assert history == {"task_id": "go/stack", "runs": [], "failures": {}}
+
+
+def test_task_history_for_an_unknown_task_is_404(client):
+    assert client.get("/api/tasks/python/nope/results").status_code == 404
+
+
+def test_single_task_route_still_works_next_to_history(client):
+    assert client.get("/api/tasks/go/stack").json()["id"] == "go/stack"
