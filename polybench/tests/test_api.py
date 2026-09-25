@@ -93,3 +93,41 @@ def test_stats_count_runs(client):
     stats = client.get("/api/stats").json()
     assert stats["total_runs"] == 2 and stats["completed_runs"] == 2
     assert stats["avg_pass_at_k"] == 0.5
+
+
+def test_compare_reports_tasks_missing_from_one_run_as_null(client):
+    from polybench.db import get_session
+    from polybench.models import TaskResult
+
+    a, b = _add_runs("a", "b")
+    with get_session() as session:
+        for run_id, task_id in [(a, "python/x"), (b, "python/x"), (b, "go/y")]:
+            session.add(
+                TaskResult(
+                    run_id=run_id,
+                    task_id=task_id,
+                    language="python",
+                    difficulty="easy",
+                    samples_generated=1,
+                    samples_passed=1,
+                    task_pass_at_k=1.0,
+                )
+            )
+        session.commit()
+
+    rows = {
+        r["task_id"]: r
+        for r in client.get(f"/api/runs/compare?run_a={a}&run_b={b}").json()
+    }
+    assert rows["python/x"] == {
+        "task_id": "python/x",
+        "run_a": 1.0,
+        "run_b": 1.0,
+        "delta": 0.0,
+    }
+    assert rows["go/y"] == {
+        "task_id": "go/y",
+        "run_a": None,
+        "run_b": 1.0,
+        "delta": None,
+    }

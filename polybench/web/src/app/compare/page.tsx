@@ -8,7 +8,8 @@ import { Empty, PageHead, Score, SkeletonRows } from "@/components/ui";
 
 const runLabel = (r: Run) => `${r.model} (${r.provider}), ${relativeTime(r.created_at)}`;
 
-function Change({ delta }: { delta: number }) {
+function Change({ delta }: { delta: number | null }) {
+  if (delta === null) return <span className="muted">Not in both runs</span>;
   if (Math.abs(delta) < 1e-9) return <span className="muted">No change</span>;
   const up = delta > 0;
   return (
@@ -58,15 +59,18 @@ export default function Compare() {
   const summary = useMemo(() => {
     const list = rows ?? [];
     return {
-      better: list.filter((r) => r.run_b > r.run_a).length,
-      worse: list.filter((r) => r.run_b < r.run_a).length,
-      same: list.filter((r) => r.run_b === r.run_a).length,
+      better: list.filter((r) => r.delta !== null && r.delta > 0).length,
+      worse: list.filter((r) => r.delta !== null && r.delta < 0).length,
+      same: list.filter((r) => r.delta === 0).length,
+      unshared: list.filter((r) => r.delta === null).length,
     };
   }, [rows]);
 
+  // Biggest changes first; tasks only one run included go last.
+  const magnitude = (r: CompareRow) => (r.delta === null ? -1 : Math.abs(r.delta));
   const shown = (rows ?? [])
-    .filter((r) => !changedOnly || r.run_a !== r.run_b)
-    .sort((x, y) => Math.abs(y.run_b - y.run_a) - Math.abs(x.run_b - x.run_a) || x.task_id.localeCompare(y.task_id));
+    .filter((r) => !changedOnly || (r.delta !== null && r.delta !== 0))
+    .sort((x, y) => magnitude(y) - magnitude(x) || x.task_id.localeCompare(y.task_id));
 
   if (runs && runs.length < 2) {
     return (
@@ -110,6 +114,11 @@ export default function Compare() {
                 <span><strong className="score-hi">{summary.better}</strong> improved</span>
                 <span><strong className="score-lo">{summary.worse}</strong> regressed</span>
                 <span><strong>{summary.same}</strong> unchanged</span>
+                {summary.unshared > 0 && (
+                  <span title="Tasks only one of the runs included, for example because of a language filter">
+                    <strong>{summary.unshared}</strong> in one run only
+                  </span>
+                )}
                 <label className="row" style={{ gap: 6, cursor: "pointer" }}>
                   <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
                   Changed only
@@ -137,9 +146,9 @@ export default function Compare() {
                     {rows === null ? <SkeletonRows cols={4} rows={6} /> : shown.map((r) => (
                       <tr key={r.task_id}>
                         <td><Link href={`/tasks/${encodeURIComponent(r.task_id)}`} className="mono-id">{r.task_id}</Link></td>
-                        <td className="num"><Score value={r.run_a} digits={0} /></td>
-                        <td className="num"><Score value={r.run_b} digits={0} /></td>
-                        <td className="num"><Change delta={r.run_b - r.run_a} /></td>
+                        <td className="num">{r.run_a === null ? <span className="muted">Not run</span> : <Score value={r.run_a} digits={0} />}</td>
+                        <td className="num">{r.run_b === null ? <span className="muted">Not run</span> : <Score value={r.run_b} digits={0} />}</td>
+                        <td className="num"><Change delta={r.delta} /></td>
                       </tr>
                     ))}
                   </tbody>

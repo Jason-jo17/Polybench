@@ -470,32 +470,29 @@ def compare(
     db: str = typer.Option(settings.polybench_db, help="SQLite DB path"),
 ) -> None:
     """Compare pass@k for two runs side-by-side."""
-    from polybench.models import BenchmarkRun, TaskResult
-    from sqlmodel import select
+    from polybench.compare import compare_runs
+    from polybench.models import BenchmarkRun
 
     init_db(db)
     with get_session() as session:
-        a_rows = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_a)
-        ).all()
-        b_rows = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_b)
-        ).all()
+        rows = compare_runs(session, run_a, run_b)
         run_a_rec = session.get(BenchmarkRun, run_a)
         run_b_rec = session.get(BenchmarkRun, run_b)
         label_a = run_a_rec.model if run_a_rec else run_a[:8]
         label_b = run_b_rec.model if run_b_rec else run_b[:8]
 
-    a_map = {r.task_id: r.task_pass_at_k for r in a_rows}
-    b_map = {r.task_id: r.task_pass_at_k for r in b_rows}
-
     table = Table("Task ID", f"A: {label_a}", f"B: {label_b}", "Delta")
-    for task_id in sorted(set(a_map) | set(b_map)):
-        va, vb = a_map.get(task_id, 0.0), b_map.get(task_id, 0.0)
-        delta = vb - va
-        color = "green" if delta > 0 else ("red" if delta < 0 else "dim")
+    for row in rows:
+        if row.delta is None:
+            delta_cell = "[dim]not in both runs[/dim]"
+        else:
+            color = "green" if row.delta > 0 else ("red" if row.delta < 0 else "dim")
+            delta_cell = f"[{color}]{row.delta:+.2f}[/{color}]"
         table.add_row(
-            task_id, f"{va:.2f}", f"{vb:.2f}", f"[{color}]{delta:+.2f}[/{color}]"
+            row.task_id,
+            "—" if row.run_a is None else f"{row.run_a:.2f}",
+            "—" if row.run_b is None else f"{row.run_b:.2f}",
+            delta_cell,
         )
     console.print(table)
 
