@@ -212,7 +212,7 @@ pre-commit install             # run ruff and mypy on every commit
 
 ```bash
 cd polybench/web
-npm run lint && npm run build
+npm run lint && npm test && npm run build
 ```
 
 CI runs all of these on every push and pull request to `main`.
