@@ -1,140 +1,122 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { api, absoluteTime, isActive, relativeTime, shortId, type Run, type RunStatus } from "@/lib/api";
+import { Empty, PageHead, ScoreMeter, SkeletonRows, Status } from "@/components/ui";
 
-interface Run {
-  id: string;
-  model: string;
-  provider: string;
-  status: string;
-  pass_at_k: number;
-  total_tasks: number;
-  samples_per_task: number;
-  temperature: number;
-  created_at: string;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const cls =
-    status === "RUNNING"   ? "pb-badge-running"  :
-    status === "COMPLETED" ? "pb-badge-complete" :
-    status === "PENDING"   ? "pb-badge-pending"  :
-    "pb-badge-failed";
-
-  return (
-    <span className={`pb-badge ${cls}`}>
-      {status === "RUNNING" && <span className="pb-pulse" aria-hidden="true">●</span>}
-      {status}
-    </span>
-  );
-}
-
-const passColor = (v: number) =>
-  v >= 0.8 ? "var(--color-pass)" : v >= 0.4 ? "var(--color-warn)" : "var(--color-fail)";
+const PAGE = 25;
+const FILTERS: { value: RunStatus | ""; label: string }[] = [
+  { value: "", label: "All" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "RUNNING", label: "In progress" },
+  { value: "FAILED", label: "Failed" },
+];
 
 export default function Runs() {
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [limit, setLimit] = useState(20);
+  const router = useRouter();
+  const [runs, setRuns] = useState<Run[] | null>(null);
+  const [error, setError] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const [filter, setFilter] = useState<RunStatus | "">("");
 
-  const fetchRuns = () => {
-    fetch(`/api/runs?limit=${limit}`)
-      .then((r) => r.json())
-      .then((data) => { setRuns(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    setLoading(true);
-    fetchRuns();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const load = useCallback(() => {
+    api<Run[]>(`/runs?limit=${limit}`)
+      .then((d) => { setRuns(d); setError(""); })
+      .catch((e: Error) => setError(e.message));
   }, [limit]);
 
+  useEffect(() => { load(); }, [load]);
+
+  const anyActive = runs?.some((r) => isActive(r.status)) ?? false;
   useEffect(() => {
-    const hasActive = runs.some((r) => r.status === "RUNNING" || r.status === "PENDING");
-    if (!hasActive) return;
-    const interval = setInterval(fetchRuns, 3000);
-    return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs]);
+    if (!anyActive) return;
+    const id = setInterval(load, 3000);
+    return () => clearInterval(id);
+  }, [anyActive, load]);
+
+  const shown = (runs ?? []).filter((r) =>
+    !filter ? true : filter === "RUNNING" ? isActive(r.status) : r.status === filter,
+  );
 
   return (
-    <div className="pb-fade-up">
-      {/* Header */}
-      <div className="pb-flex-between pb-mb-xl">
-        <div>
-          <div className="pb-eyebrow">◈ Execution Log</div>
-          <h1 className="pb-page-title">Run History</h1>
+    <>
+      <PageHead title="Runs" lede="Every benchmark run, newest first. Open one to see results for each task and sample.">
+        <Link href="/" className="btn btn-primary">New run</Link>
+      </PageHead>
+
+      <div className="row" style={{ marginBottom: 16 }}>
+        <div className="seg" role="group" aria-label="Filter by status">
+          {FILTERS.map((f) => (
+            <button key={f.label} type="button" aria-pressed={filter === f.value} onClick={() => setFilter(f.value)}>
+              {f.label}
+            </button>
+          ))}
         </div>
-        <Link href="/" className="pb-new-run-link">+ New Run</Link>
       </div>
 
-      {/* Table */}
-      <div className="pb-card pb-overflow-hidden">
-        {loading ? (
-          <div className="pb-loading">
-            <span className="pb-pulse">◈ Loading runs…</span>
-          </div>
-        ) : runs.length === 0 ? (
-          <div className="pb-empty">
-            <div className="pb-empty-title">No runs yet</div>
-            <p className="pb-empty-body">Start your first benchmark from the dashboard.</p>
-            <Link href="/" className="pb-empty-cta">▶ Launch Benchmark</Link>
-          </div>
+      <div className="panel">
+        {error && !runs ? (
+          <Empty title="Couldn't load runs" action={<button className="btn btn-quiet" onClick={load}>Try again</button>}>
+            {error}
+          </Empty>
+        ) : runs && shown.length === 0 ? (
+          runs.length === 0 ? (
+            <Empty title="No runs yet" action={<Link href="/" className="btn btn-primary">Start a run</Link>}>
+              Start a run from the overview. The mock provider works without an API key.
+            </Empty>
+          ) : (
+            <Empty title="No runs with this status" action={<button className="btn btn-quiet" onClick={() => setFilter("")}>Show all runs</button>} />
+          )
         ) : (
-          <table className="pb-table">
-            <thead>
-              <tr>
-                <th>Run ID</th>
-                <th>Model</th>
-                <th>Provider</th>
-                <th>Status</th>
-                <th>Pass@k</th>
-                <th>Tasks</th>
-                <th>Samples</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => (
-                <tr key={run.id}>
-                  <td>
-                    <Link href={`/runs/${run.id}`} className="pb-cell-id">
-                      {run.id.substring(0, 10)}
-                    </Link>
-                  </td>
-                  <td className="pb-cell-mono">{run.model}</td>
-                  <td className="pb-cell-muted">{run.provider}</td>
-                  <td><StatusBadge status={run.status} /></td>
-                  <td>
-                    <span className="pb-cell-pass-score" style={{ color: passColor(run.pass_at_k) }}>
-                      {(run.pass_at_k * 100).toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="pb-cell-muted">{run.total_tasks}</td>
-                  <td className="pb-cell-muted">{run.samples_per_task}×</td>
-                  <td className="pb-cell-muted-nowrap">
-                    {new Date(run.created_at).toLocaleString()}
-                  </td>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Status</th>
+                  <th>pass@k</th>
+                  <th className="num">Tasks</th>
+                  <th className="num">n / k</th>
+                  <th>Started</th>
+                  <th>Run</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {runs === null ? (
+                  <SkeletonRows cols={7} />
+                ) : (
+                  shown.map((r) => (
+                    <tr key={r.id} className="row-link" onClick={() => router.push(`/runs/${r.id}`)}>
+                      <td>
+                        <Link href={`/runs/${r.id}`} className="model" onClick={(e) => e.stopPropagation()}>
+                          {r.model}
+                          <small>{r.provider}{r.language_filter ? `, ${r.language_filter} only` : ""}</small>
+                        </Link>
+                      </td>
+                      <td><Status status={r.status} /></td>
+                      <td><ScoreMeter value={r.pass_at_k} pending={isActive(r.status)} /></td>
+                      <td className="num">{r.total_tasks}</td>
+                      <td className="num muted">{r.samples_per_task} / {r.k}</td>
+                      <td className="muted" title={absoluteTime(r.created_at)} style={{ whiteSpace: "nowrap" }}>
+                        {relativeTime(r.created_at)}
+                      </td>
+                      <td><span className="mono-id">{shortId(r.id)}</span></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      {runs.length === limit && (
-        <div className="pb-pagination">
-          <button className="pb-btn-ghost" onClick={() => setLimit((l) => l + 20)}>
-            Load more
-          </button>
+      {runs && runs.length === limit && (
+        <div className="row" style={{ justifyContent: "center", marginTop: 20 }}>
+          <button className="btn btn-quiet" onClick={() => setLimit((l) => l + PAGE)}>Load {PAGE} more</button>
         </div>
       )}
-
-      <div className="pb-count-label">
-        Showing {runs.length} run{runs.length !== 1 ? "s" : ""}
-      </div>
-    </div>
+    </>
   );
 }
