@@ -12,9 +12,8 @@ from polybench.api.deps import SessionDep, verify_password
 from polybench.api.worker import execute_benchmark_run
 from polybench.config import settings
 from polybench.db import init_db
-from polybench.engine import RunConfig
+from polybench.engine import RunConfig, create_run
 from polybench.models import BenchmarkRun, TaskResult, Sample
-import subprocess
 from polybench.providers.anthropic_provider import AnthropicProvider
 from polybench.providers.mock_provider import MockProvider
 from polybench.providers.openai_compatible import OpenAICompatibleProvider
@@ -149,32 +148,16 @@ def start_run(req: RunRequest, background_tasks: BackgroundTasks, session: Sessi
         tags=tag_list,
     )
 
-    git_sha: str | None = None
-    try:
-        git_sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-        ).strip()
-    except Exception:
-        pass
-
     loaded = list(load_tasks(_TASKS_DEFAULT))
     registry = TaskRegistry(loaded)
     filtered = registry.filter(lang=cfg.lang, tags=cfg.tags)
+    if not filtered:
+        raise HTTPException(
+            status_code=400,
+            detail="No tasks match the chosen language and tags.",
+        )
 
-    run_record = BenchmarkRun(
-        model=cfg.model,
-        provider=cfg.provider,
-        language_filter=cfg.lang if cfg.lang else None,
-        samples_per_task=cfg.n,
-        k=cfg.k,
-        temperature=cfg.temperature,
-        total_tasks=len(filtered),
-        pass_at_k=0.0,
-        status="PENDING",
-        git_sha=git_sha,
-    )
-    session.add(run_record)
-    session.commit()
+    run_record = create_run(session, cfg, filtered)
 
     background_tasks.add_task(
         execute_benchmark_run, run_record.id, cfg, provider_impl, _TASKS_DEFAULT

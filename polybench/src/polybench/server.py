@@ -22,6 +22,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from polybench.config import PROJECT_ROOT
+
 # ---------------------------------------------------------------------------
 # Low-level MCP / LSP framing helpers
 # ---------------------------------------------------------------------------
@@ -67,8 +69,8 @@ def _err(req_id: int | str | None, code: int, message: str) -> dict[str, Any]:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-_TASKS_DEFAULT = str(Path(__file__).resolve().parents[3] / "tasks")
-_DB_DEFAULT = str(Path(__file__).resolve().parents[3] / "polybench.db")
+_TASKS_DEFAULT = str(PROJECT_ROOT / "tasks")
+_DB_DEFAULT = str(PROJECT_ROOT / "polybench.db")
 
 
 def _require_args(args: dict[str, Any], *keys: str) -> None:

@@ -1,5 +1,6 @@
 import concurrent.futures
 import logging
+import subprocess
 import threading
 from sqlmodel import Session
 from rich.progress import Progress
@@ -34,6 +35,36 @@ class RunConfig:
         self.temperature = temperature
         self.lang = lang
         self.tags = tags
+
+
+def current_git_sha() -> str | None:
+    """Return the checked-out commit, or None outside a git checkout."""
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def create_run(session: Session, cfg: RunConfig, tasks: list[Task]) -> BenchmarkRun:
+    """Insert a PENDING BenchmarkRun for these tasks; run_benchmark executes it."""
+    run = BenchmarkRun(
+        model=cfg.model,
+        provider=cfg.provider,
+        language_filter=cfg.lang or None,
+        samples_per_task=cfg.n,
+        k=cfg.k,
+        temperature=cfg.temperature,
+        total_tasks=len(tasks),
+        pass_at_k=0.0,
+        status="PENDING",
+        git_sha=current_git_sha(),
+    )
+    session.add(run)
+    session.commit()
+    session.refresh(run)
+    return run
 
 
 def _resolve_sandbox_spec(task: Task) -> tuple[str | None, str | None]:
