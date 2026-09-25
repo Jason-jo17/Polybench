@@ -7,5 +7,6 @@
   "signature": "pub fn word_count(s: &str) -> std::collections::HashMap<String, usize> { /* ... */ }",
   "tags": ["strings", "hash-map"],
   "timeout_seconds": 15,
-  "test_code": "include!(\"solution.rs\");\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn test_basic() {\n        let m = word_count(\"the cat sat the cat\");\n        assert_eq!(m[\"the\"], 2);\n        assert_eq!(m[\"cat\"], 2);\n        assert_eq!(m[\"sat\"], 1);\n    }\n\n    #[test]\n    fn test_case_insensitive() {\n        let m = word_count(\"Hello hello HELLO\");\n        assert_eq!(m[\"hello\"], 3);\n    }\n\n    #[test]\n    fn test_empty() {\n        let m = word_count(\"\");\n        assert!(m.is_empty());\n    }\n}\n"
+  "test_code": "include!(\"solution.rs\");\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn test_basic() {\n        let m = word_count(\"the cat sat the cat\");\n        assert_eq!(m[\"the\"], 2);\n        assert_eq!(m[\"cat\"], 2);\n        assert_eq!(m[\"sat\"], 1);\n    }\n\n    #[test]\n    fn test_case_insensitive() {\n        let m = word_count(\"Hello hello HELLO\");\n        assert_eq!(m[\"hello\"], 3);\n    }\n\n    #[test]\n    fn test_empty() {\n        let m = word_count(\"\");\n        assert!(m.is_empty());\n    }\n}\n",
+  "reference_solution": "pub fn word_count(s: &str) -> std::collections::HashMap<String, usize> {\n    let mut counts = std::collections::HashMap::new();\n    for word in s.split_whitespace() {\n        *counts.entry(word.to_lowercase()).or_insert(0) += 1;\n    }\n    counts\n}\n"
 }

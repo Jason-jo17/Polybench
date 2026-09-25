@@ -7,5 +7,6 @@
   "signature": "def is_balanced(s: str) -> bool: ...",
   "tags": ["stacks", "strings"],
   "timeout_seconds": 10,
-  "test_code": "from solution import is_balanced\n\ndef test_simple_parens():\n    assert is_balanced('()')\n\ndef test_nested():\n    assert is_balanced('({[]})')\n\ndef test_with_text():\n    assert is_balanced('func(a[0])')\n\ndef test_unmatched_open():\n    assert not is_balanced('({')\n\ndef test_wrong_order():\n    assert not is_balanced('([)]')\n\ndef test_empty():\n    assert is_balanced('')\n\ndef test_only_text():\n    assert is_balanced('hello world')\n"
+  "test_code": "from solution import is_balanced\n\ndef test_simple_parens():\n    assert is_balanced('()')\n\ndef test_nested():\n    assert is_balanced('({[]})')\n\ndef test_with_text():\n    assert is_balanced('func(a[0])')\n\ndef test_unmatched_open():\n    assert not is_balanced('({')\n\ndef test_wrong_order():\n    assert not is_balanced('([)]')\n\ndef test_empty():\n    assert is_balanced('')\n\ndef test_only_text():\n    assert is_balanced('hello world')\n",
+  "reference_solution": "def is_balanced(s: str) -> bool:\n    pairs = {\")\": \"(\", \"]\": \"[\", \"}\": \"{\"}\n    stack: list[str] = []\n    for ch in s:\n        if ch in \"([{\":\n            stack.append(ch)\n        elif ch in pairs:\n            if not stack or stack.pop() != pairs[ch]:\n                return False\n    return not stack\n"
 }

@@ -7,5 +7,6 @@
   "signature": "export function debounce(fn, waitMs) { /* ... */ }",
   "tags": ["timers", "closures"],
   "timeout_seconds": 10,
-  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { debounce } from './solution.js';\n\ntest('calls once after burst', async () => {\n  let calls = 0; let lastArg = null;\n  const d = debounce((x) => { calls++; lastArg = x; }, 50);\n  d(1); d(2); d(3);\n  await new Promise(r => setTimeout(r, 120));\n  assert.strictEqual(calls, 1);\n  assert.strictEqual(lastArg, 3);\n});\n"
+  "test_code": "import test from 'node:test';\nimport assert from 'node:assert';\nimport { debounce } from './solution.js';\n\ntest('calls once after burst', async () => {\n  let calls = 0; let lastArg = null;\n  const d = debounce((x) => { calls++; lastArg = x; }, 50);\n  d(1); d(2); d(3);\n  await new Promise(r => setTimeout(r, 120));\n  assert.strictEqual(calls, 1);\n  assert.strictEqual(lastArg, 3);\n});\n",
+  "reference_solution": "export function debounce(fn, waitMs) {\n  let timer = null;\n  return (...args) => {\n    clearTimeout(timer);\n    timer = setTimeout(() => fn(...args), waitMs);\n  };\n}\n"
 }

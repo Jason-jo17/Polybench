@@ -7,5 +7,6 @@
   "signature": "def flatten(nested: list) -> list: ...",
   "tags": ["recursion", "lists"],
   "timeout_seconds": 10,
-  "test_code": "from solution import flatten\n\ndef test_flat():\n    assert flatten([1, 2, 3]) == [1, 2, 3]\n\ndef test_one_level():\n    assert flatten([[1, 2], [3, 4]]) == [1, 2, 3, 4]\n\ndef test_deep():\n    assert flatten([1, [2, [3, [4]]]]) == [1, 2, 3, 4]\n\ndef test_empty():\n    assert flatten([]) == []\n\ndef test_mixed():\n    assert flatten([[1], 2, [3, [4, 5]]]) == [1, 2, 3, 4, 5]\n"
+  "test_code": "from solution import flatten\n\ndef test_flat():\n    assert flatten([1, 2, 3]) == [1, 2, 3]\n\ndef test_one_level():\n    assert flatten([[1, 2], [3, 4]]) == [1, 2, 3, 4]\n\ndef test_deep():\n    assert flatten([1, [2, [3, [4]]]]) == [1, 2, 3, 4]\n\ndef test_empty():\n    assert flatten([]) == []\n\ndef test_mixed():\n    assert flatten([[1], 2, [3, [4, 5]]]) == [1, 2, 3, 4, 5]\n",
+  "reference_solution": "def flatten(nested: list) -> list:\n    out: list = []\n    for item in nested:\n        if isinstance(item, list):\n            out.extend(flatten(item))\n        else:\n            out.append(item)\n    return out\n"
 }

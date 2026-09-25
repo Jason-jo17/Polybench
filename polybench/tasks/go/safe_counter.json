@@ -7,5 +7,6 @@
   "signature": "package solution\n\ntype SafeCounter struct { /* ... */ }\nfunc (c *SafeCounter) Inc()\nfunc (c *SafeCounter) Value() int",
   "tags": ["concurrency", "mutex"],
   "timeout_seconds": 15,
-  "test_code": "package solution\n\nimport (\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestConcurrentInc(t *testing.T) {\n\tc := &SafeCounter{}\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() { defer wg.Done(); c.Inc() }()\n\t}\n\twg.Wait()\n\tif c.Value() != 1000 {\n\t\tt.Fatalf(\"expected 1000, got %d\", c.Value())\n\t}\n}\n"
+  "test_code": "package solution\n\nimport (\n\t\"sync\"\n\t\"testing\"\n)\n\nfunc TestConcurrentInc(t *testing.T) {\n\tc := &SafeCounter{}\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() { defer wg.Done(); c.Inc() }()\n\t}\n\twg.Wait()\n\tif c.Value() != 1000 {\n\t\tt.Fatalf(\"expected 1000, got %d\", c.Value())\n\t}\n}\n",
+  "reference_solution": "package solution\n\nimport \"sync\"\n\ntype SafeCounter struct {\n\tmu sync.Mutex\n\tn  int\n}\n\nfunc (c *SafeCounter) Inc() {\n\tc.mu.Lock()\n\tdefer c.mu.Unlock()\n\tc.n++\n}\n\nfunc (c *SafeCounter) Value() int {\n\tc.mu.Lock()\n\tdefer c.mu.Unlock()\n\treturn c.n\n}\n"
 }

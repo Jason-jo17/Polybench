@@ -7,5 +7,6 @@
   "signature": "def two_sum(nums: list[int], target: int) -> list[int]: ...",
   "tags": ["hash-map", "arrays"],
   "timeout_seconds": 10,
-  "test_code": "from solution import two_sum\n\ndef test_basic():\n    result = sorted(two_sum([2,7,11,15], 9))\n    assert result == [0, 1]\n\ndef test_non_adjacent():\n    result = sorted(two_sum([3,2,4], 6))\n    assert result == [1, 2]\n\ndef test_same_value():\n    result = sorted(two_sum([3,3], 6))\n    assert result == [0, 1]\n\ndef test_negative():\n    result = sorted(two_sum([-1,-2,-3,-4,-5], -8))\n    assert result == [2, 4]\n"
+  "test_code": "from solution import two_sum\n\ndef test_basic():\n    result = sorted(two_sum([2,7,11,15], 9))\n    assert result == [0, 1]\n\ndef test_non_adjacent():\n    result = sorted(two_sum([3,2,4], 6))\n    assert result == [1, 2]\n\ndef test_same_value():\n    result = sorted(two_sum([3,3], 6))\n    assert result == [0, 1]\n\ndef test_negative():\n    result = sorted(two_sum([-1,-2,-3,-4,-5], -8))\n    assert result == [2, 4]\n",
+  "reference_solution": "def two_sum(nums: list[int], target: int) -> list[int]:\n    seen: dict[int, int] = {}\n    for i, x in enumerate(nums):\n        if target - x in seen:\n            return [seen[target - x], i]\n        seen[x] = i\n    return []\n"
 }

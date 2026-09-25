@@ -47,4 +47,4 @@ body:
     attributes:
       label: Contributing
       options:
-        - label: I'll write the task file and tests myself.
+        - label: I'll write the task file, tests and reference solution myself.
