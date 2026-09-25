@@ -150,7 +150,7 @@ Each task is a JSON file in `polybench/tasks/<language>/` with an `id`, `title`,
 uv run polybench tasks validate
 ```
 
-See [CONTRIBUTING.md](polybench/CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details, and [#15](https://github.com/Jason-jo17/Polybench/issues/15) for task ideas.
 
 ## Repository layout
 
@@ -179,6 +179,17 @@ npm run lint && npm run build
 ```
 
 CI runs all of these on every push and pull request to `main`.
+
+## Contributing
+
+Contributions are welcome, whether that's fixing a bug, adding a benchmark task or improving the dashboard.
+
+- **Where to start:** the pinned issue [Start here: known issues and where to help](https://github.com/Jason-jo17/Polybench/issues/19) lists everything that's known to be broken or planned, in a suggested order.
+- **Small first changes:** issues labelled [`good first issue`](https://github.com/Jason-jo17/Polybench/labels/good%20first%20issue).
+- **How to contribute:** setup, checks and pull request guidelines are in [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Security problems** such as sandbox escapes: report privately, as described in [SECURITY.md](SECURITY.md).
+
+**Project status:** early. The core pipeline works, but CI currently fails on lint, type checks and coverage, and `polybench run` has a known crash ([#3](https://github.com/Jason-jo17/Polybench/issues/3)). Fixing these is the top priority in the start-here issue.
 
 ## License
 

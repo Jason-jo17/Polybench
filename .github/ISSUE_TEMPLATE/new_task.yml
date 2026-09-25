@@ -1,0 +1,50 @@
+name: Propose a benchmark task
+description: Suggest a new programming task for models to solve
+labels: ["enhancement", "area: tasks"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good tasks have clear requirements, don't give away the solution, and have hidden tests that catch subtle mistakes.
+        You can also open a pull request with the task file directly. See "Adding a benchmark task" in [CONTRIBUTING.md](https://github.com/Jason-jo17/Polybench/blob/main/CONTRIBUTING.md).
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Python
+        - JavaScript
+        - Go
+        - Rust
+    validations:
+      required: true
+  - type: dropdown
+    id: difficulty
+    attributes:
+      label: Difficulty
+      options:
+        - easy
+        - medium
+        - hard
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Task description
+      description: What the model is asked to implement, including the function or class signature.
+    validations:
+      required: true
+  - type: textarea
+    id: edge-cases
+    attributes:
+      label: What should the hidden tests check?
+      description: The edge cases that separate a correct solution from a plausible wrong one.
+    validations:
+      required: true
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'll write the task file and tests myself.
