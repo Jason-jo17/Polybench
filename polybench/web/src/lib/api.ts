@@ -73,8 +73,11 @@ export interface Stats {
 
 export interface CompareRow {
   task_id: string;
-  run_a: number;
-  run_b: number;
+  /** null when the task wasn't part of that run */
+  run_a: number | null;
+  run_b: number | null;
+  /** run_b - run_a; null unless both runs include the task */
+  delta: number | null;
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

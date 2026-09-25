@@ -10,6 +10,7 @@ from sqlmodel import col, select
 
 from polybench.api.deps import SessionDep, verify_password
 from polybench.api.worker import execute_benchmark_run
+from polybench.compare import compare_runs
 from polybench.config import settings
 from polybench.db import init_db
 from polybench.engine import RunConfig, create_run
@@ -225,22 +226,9 @@ def list_runs(
 def compare_runs_api(
     run_a: str, run_b: str, session: SessionDep
 ) -> list[dict[str, Any]]:
-    a_rows = session.exec(select(TaskResult).where(TaskResult.run_id == run_a)).all()
-    b_rows = session.exec(select(TaskResult).where(TaskResult.run_id == run_b)).all()
-
-    a_map = {r.task_id: r.task_pass_at_k for r in a_rows}
-    b_map = {r.task_id: r.task_pass_at_k for r in b_rows}
-
-    rows = []
-    for task_id in sorted(set(a_map) | set(b_map)):
-        rows.append(
-            {
-                "task_id": task_id,
-                "run_a": a_map.get(task_id, 0.0),
-                "run_b": b_map.get(task_id, 0.0),
-            }
-        )
-    return rows
+    """Per-task pass@k for two runs. A task only one run included has null for
+    the other run and for delta."""
+    return [row.to_dict() for row in compare_runs(session, run_a, run_b)]
 
 
 @app.get("/api/runs/{run_id}/results")

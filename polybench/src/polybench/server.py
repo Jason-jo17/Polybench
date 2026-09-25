@@ -184,35 +184,14 @@ def _tool_get_task_results(args: dict[str, Any]) -> str:
 
 
 def _tool_compare_runs(args: dict[str, Any]) -> str:
+    from polybench.compare import compare_runs
     from polybench.db import init_db, get_session
-    from polybench.models import TaskResult
-    from sqlmodel import select
 
     _require_args(args, "run_a", "run_b")
-    run_a: str = args["run_a"]
-    run_b: str = args["run_b"]
-    db = args.get("db", _DB_DEFAULT)
-    init_db(db)
+    init_db(args.get("db", _DB_DEFAULT))
     with get_session() as session:
-        a_rows = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_a)
-        ).all()
-        b_rows = session.exec(
-            select(TaskResult).where(TaskResult.run_id == run_b)
-        ).all()
-
-    a_map = {r.task_id: r.task_pass_at_k for r in a_rows}
-    b_map = {r.task_id: r.task_pass_at_k for r in b_rows}
-
-    rows = []
-    for task_id in sorted(set(a_map) | set(b_map)):
-        va = a_map.get(task_id, 0.0)
-        vb = b_map.get(task_id, 0.0)
-        rows.append(
-            {"task_id": task_id, "run_a": va, "run_b": vb, "delta": round(vb - va, 4)}
-        )
-
-    return json.dumps(rows, indent=2)
+        rows = compare_runs(session, args["run_a"], args["run_b"])
+    return json.dumps([row.to_dict() for row in rows], indent=2)
 
 
 def _tool_run_benchmark(args: dict[str, Any]) -> str:
