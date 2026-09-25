@@ -1,13 +1,14 @@
 "use client";
 
-// PolyBench Dashboard — Industrial/Utilitarian dark theme
-
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { api, isActive, relativeTime, pct, type Run, type RunResults, type Stats } from "@/lib/api";
+import { PageHead, ResultStrip, Score, Skeleton, Status, Empty } from "@/components/ui";
 
 const MODEL_SUGGESTIONS: Record<string, string[]> = {
-  anthropic: ["claude-sonnet-4-6", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307", "claude-opus-4-5"],
+  anthropic: ["claude-sonnet-4-6", "claude-opus-4-5", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"],
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-mini", "o3-mini"],
   groq: ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"],
   together: ["meta-llama/Llama-3-70b-chat-hf", "mistralai/Mixtral-8x22B"],
@@ -19,313 +20,254 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
   mock: ["demo"],
 };
 
+const PROVIDER_NAMES: Record<string, string> = {
+  anthropic: "Anthropic", openai: "OpenAI", groq: "Groq", together: "Together",
+  mistral: "Mistral", deepseek: "DeepSeek", gemini: "Gemini", ollama: "Ollama (local)",
+  lmstudio: "LM Studio (local)", mock: "Mock (no API calls)",
+};
+
 const LANGUAGES = [
-  { value: "", label: "All Languages" },
+  { value: "", label: "All" },
   { value: "python", label: "Python" },
   { value: "javascript", label: "JavaScript" },
   { value: "go", label: "Go" },
   { value: "rust", label: "Rust" },
 ];
 
-interface Stats {
-  total_runs: number;
-  providers_used: number;
-  avg_pass_at_k: number;
-  total_tasks_executed?: number;
-  most_used_model?: string;
-}
+type ProviderStatus = Record<string, { configured: boolean; requires_key: boolean }>;
+type RecentRun = Run & { taskScores?: number[] };
 
-interface Run {
-  id: string;
-  model: string;
-  provider: string;
-  status: string;
-  pass_at_k: number;
-  created_at: string;
-  total_tasks: number;
-}
-
-export default function Dashboard() {
+export default function Overview() {
   const router = useRouter();
 
   const [provider, setProvider] = useState("mock");
   const [model, setModel] = useState("demo");
-  const [samples, setSamples] = useState(2);
+  const [samples, setSamples] = useState(5);
   const [k, setK] = useState(1);
   const [temperature, setTemperature] = useState(0.2);
   const [lang, setLang] = useState("");
   const [tags, setTags] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState<Stats>({ total_runs: 0, providers_used: 0, avg_pass_at_k: 0 });
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [recentRuns, setRecentRuns] = useState<Run[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [recent, setRecent] = useState<RecentRun[] | null>(null);
+  const [providers, setProviders] = useState<ProviderStatus>({});
 
   useEffect(() => {
-    fetch("/api/stats")
-      .then((r) => r.json())
-      .then((d) => { setStats(d); setStatsLoading(false); })
-      .catch(() => setStatsLoading(false));
+    api<Stats>("/stats").then(setStats).catch(() => {});
+    api<{ providers: ProviderStatus }>("/providers/status").then((d) => setProviders(d.providers)).catch(() => {});
 
-    fetch("/api/runs?limit=5")
-      .then((r) => r.json())
-      .then((d) => setRecentRuns(Array.isArray(d) ? d : []))
-      .catch(() => {});
+    api<Run[]>("/runs?limit=6")
+      .then(async (runs) => {
+        setRecent(runs);
+        const withScores = await Promise.all(
+          runs.map((r) =>
+            api<RunResults>(`/runs/${r.id}/results`)
+              .then((d) => ({ ...r, taskScores: d.results.map((x) => x.task_pass_at_k) }))
+              .catch(() => r),
+          ),
+        );
+        setRecent(withScores);
+      })
+      .catch(() => setRecent([]));
   }, []);
 
-  useEffect(() => {
-    const suggestions = MODEL_SUGGESTIONS[provider];
-    if (suggestions?.length) setModel(suggestions[0]);
-  }, [provider]);
+  const changeProvider = (p: string) => {
+    setProvider(p);
+    const first = MODEL_SUGGESTIONS[p]?.[0];
+    if (first) setModel(first);
+  };
 
-  const startRun = async () => {
-    setLoading(true);
+  const changeSamples = (n: number) => {
+    const clamped = Math.max(1, Math.min(20, n || 1));
+    setSamples(clamped);
+    if (k > clamped) setK(clamped);
+  };
+
+  const missingKey = providers[provider]?.requires_key && !providers[provider]?.configured;
+
+  const startRun = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
     try {
       const body: Record<string, unknown> = { model, provider, samples, k, temperature };
       if (lang) body.lang = lang;
-      if (tags) body.tags = tags;
-
-      const res = await fetch("/api/runs", {
+      if (tags.trim()) body.tags = tags;
+      const data = await api<{ run_id: string }>("/runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to start run.");
-      toast.success(`Run ${data.run_id?.substring(0, 8)}… started`);
-      if (data.run_id) setTimeout(() => router.push(`/runs/${data.run_id}`), 800);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to start run.");
+      toast.success("Run started", { description: `${model} on ${lang ? lang : "all languages"}` });
+      router.push(`/runs/${data.run_id}`);
+    } catch (err) {
+      toast.error("Couldn't start the run", { description: err instanceof Error ? err.message : undefined });
+      setSubmitting(false);
     }
-    setLoading(false);
   };
 
-  const statCards = [
-    { label: "Total Runs",      value: statsLoading ? <div className="h-8 w-16 bg-white/5 rounded animate-pulse" /> : String(stats.total_runs),                       sub: "all-time" },
-    { label: "Providers Used",  value: statsLoading ? <div className="h-8 w-16 bg-white/5 rounded animate-pulse" /> : String(stats.providers_used),                   sub: "configured" },
-    { label: "Avg Pass@k",      value: statsLoading ? <div className="h-8 w-16 bg-white/5 rounded animate-pulse" /> : `${(stats.avg_pass_at_k * 100).toFixed(1)}%`,   sub: "across all runs" },
-  ];
-
-  const passColor = (v: number) =>
-    v >= 0.8 ? "var(--color-pass)" : v >= 0.4 ? "var(--color-warn)" : "var(--color-fail)";
+  const figures = useMemo(
+    () => [
+      { label: "Runs", value: stats ? String(stats.total_runs) : null },
+      { label: "Average pass@k", value: stats ? (stats.completed_runs ? pct(stats.avg_pass_at_k) : "—") : null },
+      { label: "Task results", value: stats ? stats.total_tasks_executed.toLocaleString() : null },
+      { label: "Most-run model", value: stats ? stats.most_used_model ?? "—" : null, small: true },
+    ],
+    [stats],
+  );
 
   return (
-    <div className="pb-fade-up">
-      {/* Header */}
-      <div className="pb-mb-2xl">
-        <div className="pb-eyebrow">◈ Benchmark Control</div>
-        <h1 className="pb-page-title">
-          Evaluate<br />
-          <span className="pb-accent">Frontier Models</span>
-        </h1>
-        <p className="pb-page-desc">
-          Send real programming tasks to LLMs, execute their code in hardened Docker sandboxes,
-          and score performance with pass@k.
-        </p>
-      </div>
+    <>
+      <PageHead
+        title="Overview"
+        lede="Send coding tasks to a model, run what it writes in an isolated sandbox against hidden tests, and score it with pass@k."
+      />
 
-      {/* Stat cards */}
-      <div className="pb-grid-3 pb-mb-2xl">
-        {statCards.map((card, i) => (
-          <div key={card.label} className={`pb-stat-card pb-fade-up pb-fade-up-${i + 1}`}>
-            <div className="pb-label">{card.label}</div>
-            <div className="pb-stat-value">{card.value}</div>
-            <div className="pb-stat-sub">{card.sub}</div>
+      <div className="figures">
+        {figures.map((f) => (
+          <div className="figure" key={f.label}>
+            <div className="figure-label">{f.label}</div>
+            <div className={`figure-value${f.small ? " sm" : ""}`} title={f.value ?? undefined}>
+              {f.value ?? <Skeleton w={64} h={26} />}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Run form */}
-      <div className="pb-card pb-glow-line pb-fade-up pb-fade-up-2 pb-p-card-lg pb-mb-2xl">
-        <div className="pb-section-title pb-mb-sm">Launch Benchmark</div>
-        <p className="pb-form-desc">Configure the evaluation run parameters below.</p>
-
-        <div className="pb-grid-2-form pb-mb-md">
-          {/* Provider */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="providerSelect">Provider</label>
-            <select
-              id="providerSelect"
-              className="pb-input"
-              title="Select AI provider"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-            >
-              {Object.keys(MODEL_SUGGESTIONS).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+      <div className="overview-grid section">
+        <form className="panel" onSubmit={startRun} aria-labelledby="new-run-title">
+          <div className="panel-head">
+            <h2 className="h2" id="new-run-title">New run</h2>
           </div>
+          <div className="panel-pad stack" style={{ gap: 22 }}>
+            <div className="grid-form">
+              <div className="field">
+                <label className="field-label" htmlFor="provider">Provider</label>
+                <select id="provider" className="input" value={provider} onChange={(e) => changeProvider(e.target.value)}>
+                  {Object.keys(MODEL_SUGGESTIONS).map((p) => (
+                    <option key={p} value={p}>
+                      {PROVIDER_NAMES[p] ?? p}
+                      {providers[p]?.requires_key && !providers[p]?.configured ? " — no API key" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="model">Model</label>
+                <input
+                  id="model"
+                  className="input code"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  list="model-suggestions"
+                  placeholder="Model identifier"
+                  required
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <datalist id="model-suggestions">
+                  {(MODEL_SUGGESTIONS[provider] ?? []).map((m) => <option key={m} value={m} />)}
+                </datalist>
+              </div>
+            </div>
 
-          {/* Model */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="modelInput">Model</label>
-            <input
-              id="modelInput"
-              type="text"
-              className="pb-input"
-              title="Model name or identifier"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              list="model-suggestions"
-              placeholder="model name"
-            />
-            <datalist id="model-suggestions">
-              {(MODEL_SUGGESTIONS[provider] || []).map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </div>
+            {missingKey && (
+              <div className="notice notice-part" role="status">
+                No API key is set for {PROVIDER_NAMES[provider] ?? provider}. Add it to the backend <code>.env</code> file, or the run will fail.
+              </div>
+            )}
 
-          {/* Language filter */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="langSelect">Language Filter</label>
-            <select
-              id="langSelect"
-              className="pb-input"
-              title="Filter tasks by programming language"
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.value} value={l.value}>{l.label}</option>
-              ))}
-            </select>
-          </div>
+            <div className="field">
+              <span className="field-label" id="lang-label">Language</span>
+              <div className="seg" role="group" aria-labelledby="lang-label">
+                {LANGUAGES.map((l) => (
+                  <button type="button" key={l.value} aria-pressed={lang === l.value} onClick={() => setLang(l.value)}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          {/* Tags */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="tagsInput">Tags Filter (comma-separated)</label>
-            <input
-              id="tagsInput"
-              type="text"
-              className="pb-input"
-              title="Comma-separated tags to filter tasks"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="e.g. data-structures, concurrency"
-            />
-          </div>
+            <div className="field">
+              <label className="field-label" htmlFor="tags">Tags</label>
+              <input
+                id="tags"
+                className="input"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                placeholder="Optional, comma-separated: arrays, concurrency"
+              />
+            </div>
 
-          {/* Samples */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="samplesInput">Samples per Task (n)</label>
-            <input
-              id="samplesInput"
-              type="number"
-              className="pb-input"
-              title="Number of code samples to generate per task"
-              value={samples}
-              onChange={(e) => setSamples(Number(e.target.value))}
-              min={1}
-              max={20}
-            />
-          </div>
+            <div className="grid-form">
+              <div className="field">
+                <label className="field-label" htmlFor="samples">Samples per task (n)</label>
+                <input id="samples" type="number" className="input" min={1} max={20} value={samples} onChange={(e) => changeSamples(Number(e.target.value))} />
+              </div>
+              <div className="field">
+                <label className="field-label" htmlFor="k">k</label>
+                <input id="k" type="number" className="input" min={1} max={samples} value={k} onChange={(e) => setK(Math.max(1, Math.min(samples, Number(e.target.value) || 1)))} />
+              </div>
+            </div>
+            <p className="field-hint" style={{ marginTop: -12 }}>
+              pass@{k} is the chance that at least one of {k} sample{k > 1 ? "s" : ""} passes, estimated from {samples} per task.
+            </p>
 
-          {/* k */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="kInput">Pass@k Value (k)</label>
-            <input
-              id="kInput"
-              type="number"
-              className="pb-input"
-              title="Value of k for pass@k scoring"
-              value={k}
-              onChange={(e) => setK(Number(e.target.value))}
-              min={1}
-              max={samples}
-            />
-          </div>
+            <div className="field">
+              <label className="field-label" htmlFor="temperature">
+                Temperature <span className="score" style={{ color: "var(--ink)" }}>{temperature.toFixed(1)}</span>
+              </label>
+              <input id="temperature" type="range" className="range" min={0} max={2} step={0.1} value={temperature} onChange={(e) => setTemperature(Number(e.target.value))} />
+              <div className="row field-hint" style={{ justifyContent: "space-between" }}>
+                <span>Deterministic</span><span>Varied</span>
+              </div>
+            </div>
 
-          {/* Temperature */}
-          <div className="pb-form-group">
-            <label className="pb-label" htmlFor="temperatureInput">
-              Temperature — {temperature.toFixed(1)}
-            </label>
-            <input
-              id="temperatureInput"
-              type="range"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperature}
-              title={`Temperature: ${temperature.toFixed(1)}`}
-              onChange={(e) => setTemperature(Number(e.target.value))}
-              className="pb-range-input"
-            />
-            <div className="pb-form-hint">
-              <span>0.0 deterministic</span>
-              <span>2.0 creative</span>
+            <div className="row">
+              <button type="submit" className="btn btn-primary" disabled={submitting || !model.trim()}>
+                {submitting ? "Starting…" : "Start run"}
+              </button>
             </div>
           </div>
-        </div>
+        </form>
 
-        <div className="pb-form-actions">
-          <button
-            id="runBenchmarkBtn"
-            className="pb-btn-primary"
-            onClick={startRun}
-            disabled={loading}
-          >
-            {loading ? <span className="pb-pulse">◈ Launching…</span> : "▶ Run Benchmark"}
-          </button>
-        </div>
+        <section className="panel" aria-labelledby="recent-title">
+          <div className="panel-head">
+            <h2 className="h2" id="recent-title">Recent runs</h2>
+            <Link href="/runs" className="link">All runs</Link>
+          </div>
+          {recent === null ? (
+            <ul className="recent">
+              {[0, 1, 2, 3].map((i) => (
+                <li key={i} className="recent-item"><Skeleton w="60%" /><Skeleton w="90%" h={10} /></li>
+              ))}
+            </ul>
+          ) : recent.length === 0 ? (
+            <Empty title="No runs yet">Start a run with the mock provider to see how results are reported. It doesn&apos;t call any API.</Empty>
+          ) : (
+            <ul className="recent">
+              {recent.map((r) => (
+                <li key={r.id}>
+                  <Link href={`/runs/${r.id}`} className="recent-item">
+                    <div className="row" style={{ gap: 10 }}>
+                      <span className="model">{r.model}</span>
+                      <span className="spacer" />
+                      {isActive(r.status) ? <Status status={r.status} /> : <Score value={r.pass_at_k} />}
+                    </div>
+                    <ResultStrip values={r.taskScores ?? []} total={r.total_tasks} />
+                    <div className="row sub" style={{ gap: 14 }}>
+                      <span>{r.provider}</span>
+                      <span>{r.total_tasks} tasks, {r.samples_per_task} samples each</span>
+                      <span className="spacer" />
+                      <span>{relativeTime(r.created_at)}</span>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
-
-      {/* Recent runs */}
-      {recentRuns.length > 0 && (
-        <div className="pb-fade-up pb-fade-up-3">
-          <div className="pb-recent-header">
-            <div className="pb-section-title">Recent Runs</div>
-            <a href="/runs" className="pb-view-all-link">View all →</a>
-          </div>
-          <div className="pb-card pb-overflow-hidden">
-            <table className="pb-table">
-              <thead>
-                <tr>
-                  <th>Run ID</th>
-                  <th>Model</th>
-                  <th>Status</th>
-                  <th>Pass@k</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentRuns.map((run) => {
-                  const statusClass =
-                    run.status === "RUNNING"   ? "pb-badge-running"  :
-                    run.status === "COMPLETED" ? "pb-badge-complete" :
-                    run.status === "PENDING"   ? "pb-badge-pending"  :
-                    "pb-badge-failed";
-                  return (
-                    <tr key={run.id}>
-                      <td>
-                        <a href={`/runs/${run.id}`} className="pb-cell-id">
-                          {run.id.substring(0, 8)}
-                        </a>
-                      </td>
-                      <td className="pb-cell-mono">{run.model}</td>
-                      <td>
-                        <span className={`pb-badge ${statusClass}`}>
-                          {run.status === "RUNNING" && <span className="pb-pulse" aria-hidden="true">●</span>}
-                          {run.status}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="pb-cell-pass-score" style={{ color: passColor(run.pass_at_k) }}>
-                          {(run.pass_at_k * 100).toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="pb-cell-muted">
-                        {new Date(run.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

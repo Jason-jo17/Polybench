@@ -1,187 +1,138 @@
 "use client";
 
-// Tasks Library page — Industrial dark theme
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
+import { api, LANG_NAMES, type Task } from "@/lib/api";
+import { Difficulty, Empty, Lang, PageHead, SkeletonRows } from "@/components/ui";
 
-interface Task {
-  id: string;
-  title: string;
-  language: string;
-  difficulty: string;
-  tags: string[];
-}
-
-const LANG_COLORS: Record<string, string> = {
-  python:     "var(--color-accent)",
-  javascript: "#F5A623",
-  go:         "#22D3A5",
-  rust:       "#E87040",
-};
+const DIFFICULTIES = ["easy", "medium", "hard"];
 
 export default function Tasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [tasks, setTasks] = useState<Task[] | null>(null);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [langFilter, setLangFilter] = useState("");
-  const [diffFilter, setDiffFilter] = useState("");
+  const [lang, setLang] = useState("");
+  const [diff, setDiff] = useState("");
 
   useEffect(() => {
-    fetch("/api/tasks")
-      .then((r) => r.json())
-      .then((data) => { setTasks(Array.isArray(data) ? data : []); setLoading(false); })
-      .catch(() => setLoading(false));
+    api<Task[]>("/tasks").then(setTasks).catch((e: Error) => { setError(e.message); setTasks([]); });
   }, []);
 
-  const filtered = tasks.filter((t) => {
-    const matchSearch = !search ||
-      t.id.toLowerCase().includes(search.toLowerCase()) ||
-      (t.title || "").toLowerCase().includes(search.toLowerCase()) ||
-      t.tags.some((tag) => tag.toLowerCase().includes(search.toLowerCase()));
-    const matchLang = !langFilter || t.language === langFilter;
-    const matchDiff = !diffFilter || t.difficulty === diffFilter;
-    return matchSearch && matchLang && matchDiff;
-  });
+  const languages = useMemo(() => [...new Set((tasks ?? []).map((t) => t.language))].sort(), [tasks]);
 
-  const languages = [...new Set(tasks.map((t) => t.language))].sort();
-  const difficulties = ["easy", "medium", "hard"];
-  const clearFilters = () => { setSearch(""); setLangFilter(""); setDiffFilter(""); };
+  const q = search.trim().toLowerCase();
+  const shown = (tasks ?? []).filter(
+    (t) =>
+      (!q || t.id.toLowerCase().includes(q) || t.title?.toLowerCase().includes(q) || t.tags.some((g) => g.toLowerCase().includes(q))) &&
+      (!lang || t.language === lang) &&
+      (!diff || t.difficulty === diff),
+  );
+  const filtered = Boolean(q || lang || diff);
+  const clear = () => { setSearch(""); setLang(""); setDiff(""); };
 
   return (
-    <div className="pb-fade-up">
-      {/* Header */}
-      <div className="pb-mb-xl">
-        <div className="pb-eyebrow">◈ Task Registry</div>
-        <h1 className="pb-page-title">Benchmark Tasks</h1>
-        <p className="pb-page-desc-sm">
-          {tasks.length} programming problems across {languages.length} languages.
-        </p>
-      </div>
+    <>
+      <PageHead
+        title="Tasks"
+        lede={
+          tasks && tasks.length
+            ? `${tasks.length} programming problems in ${languages.length} languages. Each one is scored against a hidden test suite the model never sees.`
+            : "Programming problems scored against a hidden test suite the model never sees."
+        }
+      />
 
-      {/* Filters */}
-      <div className="pb-filters-row">
-        <input
-          id="taskSearch"
-          type="text"
-          className="pb-input"
-          style={{ maxWidth: "280px" }}
-          placeholder="Search tasks, tags…"
-          title="Search by task ID, title, or tag"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <label htmlFor="taskLangFilter" className="pb-label" style={{ display: "none" }}>Language</label>
-        <select
-          id="taskLangFilter"
-          className="pb-input"
-          style={{ maxWidth: "160px" }}
-          title="Filter by programming language"
-          value={langFilter}
-          onChange={(e) => setLangFilter(e.target.value)}
-        >
-          <option value="">All Languages</option>
+      <div className="task-filters">
+        <label className="search">
+          <Search size={16} aria-hidden="true" />
+          <span className="sr-only">Search tasks</span>
+          <input
+            type="search"
+            className="input"
+            placeholder="Search by name or tag"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <div className="seg" role="group" aria-label="Language">
+          <button type="button" aria-pressed={!lang} onClick={() => setLang("")}>All</button>
           {languages.map((l) => (
-            <option key={l} value={l}>{l}</option>
+            <button type="button" key={l} aria-pressed={lang === l} onClick={() => setLang(l)}>{LANG_NAMES[l] ?? l}</button>
           ))}
-        </select>
-        <label htmlFor="taskDiffFilter" className="pb-label" style={{ display: "none" }}>Difficulty</label>
-        <select
-          id="taskDiffFilter"
-          className="pb-input"
-          style={{ maxWidth: "160px" }}
-          title="Filter by difficulty level"
-          value={diffFilter}
-          onChange={(e) => setDiffFilter(e.target.value)}
-        >
-          <option value="">All Difficulties</option>
-          {difficulties.map((d) => (
-            <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>
+        </div>
+        <div className="seg" role="group" aria-label="Difficulty">
+          <button type="button" aria-pressed={!diff} onClick={() => setDiff("")}>Any</button>
+          {DIFFICULTIES.map((d) => (
+            <button type="button" key={d} aria-pressed={diff === d} onClick={() => setDiff(d)}>
+              {d.charAt(0).toUpperCase() + d.slice(1)}
+            </button>
           ))}
-        </select>
-        {(search || langFilter || diffFilter) && (
-          <button className="pb-btn-ghost" onClick={clearFilters}>Clear filters</button>
-        )}
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="pb-card pb-overflow-hidden">
-        {loading ? (
-          <div className="pb-loading">
-            <span className="pb-pulse">◈ Loading tasks…</span>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="pb-empty">
-            <div className="pb-empty-title">No tasks match your filters</div>
-            <button className="pb-btn-ghost" onClick={clearFilters}>Clear filters</button>
-          </div>
+      <div className="panel">
+        {error ? (
+          <Empty title="Couldn't load tasks">{error}</Empty>
+        ) : tasks && shown.length === 0 ? (
+          <Empty title="No tasks match" action={filtered ? <button className="btn btn-quiet" onClick={clear}>Clear filters</button> : undefined}>
+            {filtered ? "Try a different search, or clear the filters." : "No task files were found in the tasks directory."}
+          </Empty>
         ) : (
-          <table className="pb-table">
-            <thead>
-              <tr>
-                <th>Task ID</th>
-                <th>Title</th>
-                <th>Language</th>
-                <th>Difficulty</th>
-                <th>Tags</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((task) => {
-                const langColor = LANG_COLORS[task.language] || "var(--color-accent)";
-                return (
-                  <tr key={task.id}>
-                    <td className="pb-cell-muted">{task.id}</td>
-                    <td style={{ fontWeight: 500 }}>
-                      {task.title || task.id.split("/")[1]?.replace(/_/g, " ")}
-                    </td>
-                    <td>
-                      <span
-                        className="pb-badge"
-                        style={{
-                          background: `${langColor}20`,
-                          color: langColor,
-                        }}
-                      >
-                        {task.language}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`pb-badge pb-badge-${task.difficulty}`}>
-                        {task.difficulty}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="pb-flex pb-flex-wrap pb-flex-gap-sm">
-                        {task.tags?.map((tag) => (
-                          <button
-                            key={tag}
-                            className="pb-tag-chip"
-                            onClick={() => setSearch(tag)}
-                            title={`Filter by tag: ${tag}`}
-                          >
-                            {tag}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <Link href={`/tasks/${encodeURIComponent(task.id)}`} className="pb-task-view-btn">
-                        View →
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Language</th>
+                  <th>Difficulty</th>
+                  <th>Tags</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks === null ? <SkeletonRows cols={4} rows={8} /> : shown.map((t) => {
+                  const href = `/tasks/${encodeURIComponent(t.id)}`;
+                  return (
+                    <tr key={t.id} className="row-link" onClick={() => router.push(href)}>
+                      <td>
+                        <Link href={href} className="model" onClick={(e) => e.stopPropagation()}>
+                          {t.title || t.id}
+                          <small className="code">{t.id}</small>
+                        </Link>
+                      </td>
+                      <td><Lang lang={t.language} /></td>
+                      <td><Difficulty level={t.difficulty} /></td>
+                      <td>
+                        <div className="row" style={{ gap: 6 }}>
+                          {t.tags.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              className="chip"
+                              onClick={(e) => { e.stopPropagation(); setSearch(tag); }}
+                              title={`Show tasks tagged ${tag}`}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
-      <div className="pb-count-label">
-        {filtered.length} task{filtered.length !== 1 ? "s" : ""}{tasks.length !== filtered.length ? ` of ${tasks.length}` : ""}
-      </div>
-    </div>
+      {tasks && filtered && shown.length > 0 && (
+        <p className="sub" style={{ marginTop: 12 }}>
+          Showing {shown.length} of {tasks.length}.{" "}
+          <button className="link" style={{ background: "none", border: 0, cursor: "pointer", font: "inherit" }} onClick={clear}>Clear filters</button>
+        </p>
+      )}
+    </>
   );
 }

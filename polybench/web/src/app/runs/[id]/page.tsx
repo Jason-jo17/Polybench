@@ -1,318 +1,334 @@
 "use client";
 
-// Run Detail page — Industrial dark theme
-
-import React, { useEffect, useState, use } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-} from "recharts";
+  api, absoluteTime, humanize, isActive, pct, shortId,
+  type RunResults, type Sample, type TaskResult,
+} from "@/lib/api";
+import { Difficulty, Empty, Lang, Score, Skeleton, Status } from "@/components/ui";
 
-const FAILURE_COLORS: Record<string, string> = {
-  extraction_failed:  "#8B8B85",
-  compile_error:      "#F5A623",
-  runtime_error:      "#FF4545",
-  wrong_output:       "#E87040",
-  timeout:            "#B044FF",
-  memory_exceeded:    "#FF4545",
-  security_violation: "#FF0055",
+const FAILURE_HELP: Record<string, string> = {
+  extraction_failed: "No code block could be pulled out of the response.",
+  compile_error: "The code didn't compile or parse.",
+  runtime_error: "The code crashed while the tests ran.",
+  wrong_output: "The code ran, but at least one hidden test failed.",
+  timeout: "The tests didn't finish within the task's time limit.",
+  memory_exceeded: "The sandbox hit its memory limit.",
+  security_violation: "The code tried something the sandbox blocks.",
 };
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === "RUNNING")   return <span className="pb-badge pb-badge-running"><span className="pb-pulse" aria-hidden="true">●</span> Running</span>;
-  if (status === "PENDING")   return <span className="pb-badge pb-badge-pending">◌ Pending</span>;
-  if (status === "COMPLETED") return <span className="pb-badge pb-badge-complete">✓ Completed</span>;
-  if (status === "FAILED")    return <span className="pb-badge pb-badge-failed">✗ Failed</span>;
-  return <span className="pb-badge">{status}</span>;
-}
-
-function MetaItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div>
-      <span className="pb-meta-label">{label}</span>
-      <div className={mono ? "pb-meta-value-mono" : "pb-meta-value"}>{value}</div>
-    </div>
-  );
-}
-
-const passColor = (v: number) =>
-  v >= 0.8 ? "var(--color-pass)" : v > 0 ? "var(--color-warn)" : "var(--color-fail)";
-
-export default function RunDetails({ params }: { params: Promise<{ id: string }> }) {
+export default function RunDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<RunResults | null>(null);
   const [error, setError] = useState("");
-  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-    let timeoutId: ReturnType<typeof setTimeout>;
-
-    const fetchData = async () => {
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
       try {
-        const res = await fetch(`/api/runs/${id}/results`);
-        if (!res.ok) throw new Error("Failed to fetch run details");
-        const d = await res.json();
-        if (isMounted) {
-          setData(d);
-          setLoading(false);
-          if (d.run?.status === "PENDING" || d.run?.status === "RUNNING") {
-            timeoutId = setTimeout(fetchData, 2000);
-          }
-        }
-      } catch (err: unknown) {
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : "Error");
-          setLoading(false);
-        }
+        const d = await api<RunResults>(`/runs/${id}/results`);
+        if (!alive) return;
+        setData(d);
+        if (isActive(d.run.status)) timer = setTimeout(load, 2000);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : "Couldn't load this run.");
       }
     };
-    fetchData();
-    return () => { isMounted = false; clearTimeout(timeoutId); };
+    load();
+    return () => { alive = false; clearTimeout(timer); };
   }, [id]);
 
-  if (loading && !data)
-    return <div className="pb-loading"><span className="pb-pulse">◈ Loading run…</span></div>;
-  if (error && !data)
-    return <div className="pb-error-state">✗ {error}</div>;
-  if (!data) return null;
-
-  const { run, results, samples } = data;
-
-  const toggleTask = (taskId: string) => {
-    setExpandedTasks((prev) => {
-      const next = new Set(prev);
-      next.has(taskId) ? next.delete(taskId) : next.add(taskId);
-      return next;
-    });
-  };
-
-  const getSamples = (trId: string) =>
-    samples
-      .filter((s: any) => s.task_result_id === trId)
-      .sort((a: any, b: any) => a.sample_index - b.sample_index);
-
-  const totalExpected = run.total_tasks * run.samples_per_task;
-  const samplesRecorded = samples.length;
-  const progressPct = totalExpected > 0 ? Math.round((samplesRecorded / totalExpected) * 100) : 0;
-  const isActive = run.status === "RUNNING" || run.status === "PENDING";
-
-  const failureCounts: Record<string, number> = {};
-  samples.forEach((s: any) => {
-    if (!s.passed && s.failure_kind) {
-      failureCounts[s.failure_kind] = (failureCounts[s.failure_kind] || 0) + 1;
+  const derived = useMemo(() => {
+    if (!data) return null;
+    const byResult = new Map<string, Sample[]>();
+    for (const s of data.samples) {
+      const list = byResult.get(s.task_result_id) ?? [];
+      list.push(s);
+      byResult.set(s.task_result_id, list);
     }
-  });
-  const failureChartData = Object.entries(failureCounts).map(([name, value]) => ({ name, value }));
+    byResult.forEach((l) => l.sort((a, b) => a.sample_index - b.sample_index));
 
-  const totalInputTokens = samples.reduce((acc: number, s: any) => acc + (s.input_tokens || 0), 0);
-  const totalOutputTokens = samples.reduce((acc: number, s: any) => acc + (s.output_tokens || 0), 0);
-  const hasCharts = failureChartData.length > 0 || totalInputTokens > 0;
+    const results = [...data.results].sort((a, b) => a.task_id.localeCompare(b.task_id));
+    const failures = new Map<string, number>();
+    let passedSamples = 0, tokensIn = 0, tokensOut = 0, runtime = 0;
+    for (const s of data.samples) {
+      if (s.passed) passedSamples++;
+      else failures.set(s.failure_kind ?? "unknown", (failures.get(s.failure_kind ?? "unknown") ?? 0) + 1);
+      tokensIn += s.input_tokens ?? 0;
+      tokensOut += s.output_tokens ?? 0;
+      runtime += s.runtime_ms;
+    }
+    const failureList = [...failures.entries()].sort((a, b) => b[1] - a[1]);
+    const firstFail = data.samples.find((s) => !s.passed);
+    return {
+      byResult, results, failureList, passedSamples, tokensIn, tokensOut,
+      avgRuntime: data.samples.length ? Math.round(runtime / data.samples.length) : 0,
+      solved: data.results.filter((r) => r.samples_passed > 0).length,
+      firstFail: firstFail?.id ?? data.samples[0]?.id ?? null,
+    };
+  }, [data]);
+
+  const current = selected ?? derived?.firstFail ?? null;
+
+  if (error && !data) {
+    return (
+      <>
+        <Crumbs id={id} />
+        <div className="panel">
+          <Empty title="Couldn't load this run" action={<Link href="/runs" className="btn btn-quiet">Back to runs</Link>}>{error}</Empty>
+        </div>
+      </>
+    );
+  }
+
+  if (!data || !derived) {
+    return (
+      <>
+        <Crumbs id={id} />
+        <Skeleton w={320} h={40} />
+        <div style={{ height: 32 }} />
+        <Skeleton h={88} />
+        <div style={{ height: 24 }} />
+        <Skeleton h={360} />
+      </>
+    );
+  }
+
+  const { run, samples } = data;
+  const active = isActive(run.status);
+  const expected = run.total_tasks * run.samples_per_task;
+  const progress = expected ? Math.min(100, Math.round((samples.length / expected) * 100)) : 0;
+  const sample = samples.find((s) => s.id === current) ?? null;
+  const sampleResult = sample ? data.results.find((r) => r.id === sample.task_result_id) : undefined;
+  const maxFail = derived.failureList[0]?.[1] ?? 1;
 
   return (
-    <div className="pb-fade-up">
-      {/* Header */}
-      <div className="pb-run-header">
-        <div>
-          <div className="pb-eyebrow">◈ Run Detail</div>
-          <div className="pb-run-title-row">
-            <h1 className={`pb-page-title pb-run-title`}>
-              {run.id.substring(0, 10)}&hellip;
-            </h1>
-            <StatusBadge status={run.status} />
+    <>
+      <Crumbs id={id} />
+
+      <header className="run-head">
+        <div style={{ minWidth: 0 }}>
+          <h1 className="page-title" style={{ overflowWrap: "anywhere" }}>{run.model}</h1>
+          <div className="row" style={{ marginTop: 12, gap: 18 }}>
+            <Status status={run.status} />
+            <span className="sub">{run.provider}</span>
+            <span className="sub">Started {absoluteTime(run.created_at)}</span>
           </div>
         </div>
-        <Link href="/runs" className="pb-back-link">← Back to Runs</Link>
-      </div>
+        <div className="run-score">
+          <div className="figure-label">pass@{run.k}</div>
+          {active && !data.results.length ? <span className="run-score-value muted">—</span> : (
+            <span className="run-score-value"><Score value={run.pass_at_k} /></span>
+          )}
+        </div>
+      </header>
 
-      {/* Progress bar */}
-      {isActive && (
-        <div className="pb-mb-lg">
-          <div className="pb-progress-header">
-            <span>Samples completed</span>
-            <span>{samplesRecorded} / {totalExpected} ({progressPct}%)</span>
+      {active && (
+        <div style={{ marginBottom: 28 }}>
+          <div className="row sub" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+            <span>{run.status === "PENDING" ? "Waiting to start" : "Generating and testing samples"}</span>
+            <span>{samples.length} of {expected} samples ({progress}%)</span>
           </div>
-          <div className="pb-progress-track">
-            <div className="pb-progress-bar" style={{ width: `${progressPct}%` }} />
+          <div className="progress" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+            <span style={{ width: `${progress}%` }} />
           </div>
         </div>
       )}
 
-      {/* Metadata grid */}
-      <div className="pb-card pb-fade-up-1 pb-p-card pb-mb-lg">
-        <div className="pb-grid-4">
-          <MetaItem label="Model"        value={run.model}                                                    mono />
-          <MetaItem label="Provider"     value={run.provider} />
-          <MetaItem label={`Pass@${run.k}`} value={`${run.pass_at_k != null ? (run.pass_at_k * 100).toFixed(1) : "0.0"}%`} mono />
-          <MetaItem label="Tasks"        value={`${results.length} / ${run.total_tasks}`}                    mono />
-          <MetaItem label="Samples (n)"  value={String(run.samples_per_task)}                                mono />
-          <MetaItem label="Temperature"  value={String(run.temperature)}                                     mono />
-          <MetaItem label="Status"       value={run.status} />
-          <MetaItem label="Started"      value={new Date(run.created_at).toLocaleString()} />
+      <div className="figures">
+        <div className="figure">
+          <div className="figure-label">Tasks solved at least once</div>
+          <div className="figure-value">{derived.solved}<span className="muted" style={{ fontWeight: 500 }}> / {run.total_tasks}</span></div>
+        </div>
+        <div className="figure">
+          <div className="figure-label">Samples passed</div>
+          <div className="figure-value">{derived.passedSamples}<span className="muted" style={{ fontWeight: 500 }}> / {samples.length}</span></div>
+        </div>
+        <div className="figure">
+          <div className="figure-label">Avg sandbox time</div>
+          <div className="figure-value">{samples.length ? `${derived.avgRuntime.toLocaleString()} ms` : "—"}</div>
+        </div>
+        <div className="figure">
+          <div className="figure-label">Tokens in / out</div>
+          <div className="figure-value sm">
+            {derived.tokensIn || derived.tokensOut
+              ? `${derived.tokensIn.toLocaleString()} / ${derived.tokensOut.toLocaleString()}`
+              : "Not reported"}
+          </div>
         </div>
       </div>
 
-      {/* Charts */}
-      {hasCharts && (
-        <div className={failureChartData.length > 0 && totalInputTokens > 0 ? "pb-charts-row-2" : "pb-charts-row-1"}>
-          {failureChartData.length > 0 && (
-            <div className="pb-card pb-fade-up-2 pb-p-card">
-              <div className="pb-section-title pb-mb-md">Failure Taxonomy</div>
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie data={failureChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value">
-                    {failureChartData.map((entry) => (
-                      <Cell key={entry.name} fill={FAILURE_COLORS[entry.name] || "#6B6B65"} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{ background: "var(--color-panel)", border: "1px solid var(--color-border)", borderRadius: "6px", fontFamily: "var(--font-mono)", fontSize: "11px", color: "var(--color-text)" }}
-                    labelStyle={{ color: "var(--color-muted)" }}
-                  />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--color-muted)" }}
-                    formatter={(value) => value.replace(/_/g, " ")}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+      <section className="section" aria-labelledby="matrix-title">
+        <div className="row" style={{ marginBottom: 14, justifyContent: "space-between" }}>
+          <h2 className="h2" id="matrix-title">Results by task</h2>
+          <div className="legend">
+            <span><i className="cell p" /> Passed</span>
+            <span><i className="cell f" /> Failed</span>
+            <span><i className="cell" /> Not run yet</span>
+          </div>
+        </div>
+        <div className="panel panel-pad">
+          {derived.results.length === 0 ? (
+            <Empty title={active ? "Waiting for the first task" : "No tasks were run"}>
+              {active ? "Results appear here as each task finishes." : "The run ended before any task finished. Check the API logs for the cause."}
+            </Empty>
+          ) : (
+            <div className="matrix" role="table" aria-label="Samples by task">
+              <div className="matrix-row matrix-head" role="row">
+                <span role="columnheader">Task</span>
+                <span role="columnheader" className="m-cells">Samples (select one to inspect)</span>
+                <span role="columnheader" className="m-score" style={{ textAlign: "right" }}>pass@{run.k}</span>
+              </div>
+              {derived.results.map((r) => (
+                <MatrixRow
+                  key={r.id}
+                  result={r}
+                  samples={derived.byResult.get(r.id) ?? []}
+                  n={run.samples_per_task}
+                  current={current}
+                  onSelect={setSelected}
+                />
+              ))}
             </div>
           )}
+        </div>
+      </section>
 
-          {totalInputTokens > 0 && (
-            <div className="pb-card pb-fade-up-2 pb-p-card">
-              <div className="pb-section-title pb-mb-lg">Token Usage</div>
-              <div className="pb-token-section">
-                <div>
-                  <div className="pb-label">Input Tokens</div>
-                  <div className="pb-token-value">{totalInputTokens.toLocaleString()}</div>
+      {sample && sampleResult && (
+        <section className="section" aria-labelledby="sample-title">
+          <div className="panel">
+            <div className="panel-head" style={{ flexWrap: "wrap" }}>
+              <div className="row" style={{ gap: 14 }}>
+                <h2 className="h2" id="sample-title">
+                  <Link href={`/tasks/${encodeURIComponent(sampleResult.task_id)}`} className="code" style={{ fontSize: 15 }}>
+                    {sampleResult.task_id}
+                  </Link>
+                  <span className="muted" style={{ fontWeight: 500 }}> sample {sample.sample_index + 1}</span>
+                </h2>
+                <span className={`status ${sample.passed ? "status-completed" : "status-failed"}`}>
+                  <span className="status-dot" aria-hidden="true" />
+                  {sample.passed ? "Passed" : humanize(sample.failure_kind ?? "failed")}
+                </span>
+              </div>
+              <div className="row sub" style={{ gap: 16 }}>
+                <span>{sample.runtime_ms.toLocaleString()} ms{sample.timed_out ? ", timed out" : ""}</span>
+                {sample.exit_code !== null && <span>exit {sample.exit_code}</span>}
+                {sample.output_tokens !== null && <span>{sample.output_tokens.toLocaleString()} output tokens</span>}
+              </div>
+            </div>
+            <div className="panel-pad stack" style={{ gap: 16 }}>
+              {!sample.passed && sample.failure_kind && FAILURE_HELP[sample.failure_kind] && (
+                <p className="sub">{FAILURE_HELP[sample.failure_kind]}</p>
+              )}
+              <div className="grid-2">
+                <div className="stack" style={{ gap: 8 }}>
+                  <span className="field-label">Extracted code</span>
+                  <pre className="code-block">{sample.extracted_code || "No code could be extracted from the response."}</pre>
                 </div>
-                <div className="pb-divider" />
-                <div>
-                  <div className="pb-label">Output Tokens</div>
-                  <div className="pb-token-value-secondary">{totalOutputTokens.toLocaleString()}</div>
-                </div>
-                <div className="pb-divider" />
-                <div>
-                  <div className="pb-label">Avg per Sample</div>
-                  <div className="pb-token-avg">
-                    {samples.length > 0 ? Math.round((totalInputTokens + totalOutputTokens) / samples.length).toLocaleString() : "—"} total tokens
-                  </div>
+                <div className="stack" style={{ gap: 8 }}>
+                  <span className="field-label">Sandbox output</span>
+                  <pre className={`code-block ${sample.passed ? "out-pass" : "out-fail"}`}>
+                    {[sample.stdout, sample.stderr].filter(Boolean).join("\n") || "The sandbox produced no output."}
+                  </pre>
                 </div>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        </section>
       )}
 
-      {/* Task results */}
-      <div className="pb-section-title pb-mb-md">Task Results</div>
-      <div className="pb-card pb-fade-up-3 pb-overflow-hidden">
-        {results.length === 0 ? (
-          <div className="pb-loading">
-            {isActive ? <span className="pb-pulse">◈ Waiting for first results…</span> : "No tasks executed."}
+      <div className="grid-2 section">
+        <section className="panel" aria-labelledby="fail-title">
+          <div className="panel-head"><h2 className="h2" id="fail-title">Why samples failed</h2></div>
+          <div className="panel-pad">
+            {derived.failureList.length === 0 ? (
+              <p className="sub">{samples.length ? "Every sample passed." : "No samples yet."}</p>
+            ) : (
+              <ul className="bars">
+                {derived.failureList.map(([kind, count]) => (
+                  <li key={kind} title={FAILURE_HELP[kind]}>
+                    <span className="bars-label">{humanize(kind)}</span>
+                    <span className="bars-track"><span style={{ width: `${(count / maxFail) * 100}%` }} /></span>
+                    <span className="bars-value">{count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-        ) : (
-          <table className="pb-table">
-            <thead>
-              <tr>
-                <th style={{ width: "32px" }}></th>
-                <th>Task ID</th>
-                <th>Language</th>
-                <th>Difficulty</th>
-                <th>Generated</th>
-                <th>Passed</th>
-                <th>Pass@k</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r: any) => {
-                const expanded = expandedTasks.has(r.id);
-                const taskSamples = getSamples(r.id);
-                return (
-                  <React.Fragment key={r.id}>
-                    <tr onClick={() => toggleTask(r.id)} style={{ cursor: "pointer" }}>
-                      <td className="pb-cell-mono pb-accent" style={{ paddingRight: "8px", fontSize: "10px" }}>
-                        {expanded ? "▼" : "▶"}
-                      </td>
-                      <td className="pb-cell-mono">{r.task_id}</td>
-                      <td>
-                        <span className="pb-badge pb-badge-running">{r.language}</span>
-                      </td>
-                      <td>
-                        <span className={`pb-badge pb-badge-${r.difficulty}`}>{r.difficulty}</span>
-                      </td>
-                      <td className="pb-cell-muted">{r.samples_generated}</td>
-                      <td className="pb-cell-mono">{r.samples_passed}</td>
-                      <td>
-                        <span className="pb-cell-pass-score" style={{ color: passColor(r.task_pass_at_k) }}>
-                          {(r.task_pass_at_k * 100).toFixed(0)}%
-                        </span>
-                      </td>
-                    </tr>
+        </section>
 
-                    {expanded && (
-                      <tr>
-                        <td colSpan={7} className="pb-sample-expanded-cell">
-                          <div className="pb-sample-expanded-wrapper">
-                            <div className="pb-sample-list-header">
-                              Samples — {r.task_id}
-                            </div>
-                            {taskSamples.length === 0 ? (
-                              <div className="pb-loading" style={{ padding: "16px" }}>
-                                <span className="pb-pulse">◈ Generating…</span>
-                              </div>
-                            ) : (
-                              <div className="pb-sample-list">
-                                {taskSamples.map((s: any) => (
-                                  <div
-                                    key={s.id}
-                                    className="pb-sample-card"
-                                    style={{
-                                      borderLeft: `3px solid ${s.passed ? "var(--color-pass)" : "var(--color-fail)"}`,
-                                      border: `1px solid ${s.passed ? "var(--color-pass)" : "var(--color-fail)"}`,
-                                    }}
-                                  >
-                                    <div className="pb-sample-header">
-                                      <span className="pb-sample-idx">Sample {s.sample_index + 1}</span>
-                                      {s.passed
-                                        ? <span className="pb-badge pb-badge-complete">✓ Passed</span>
-                                        : <span className="pb-badge pb-badge-failed">✗ {s.failure_kind?.replace(/_/g, " ") || "Failed"}</span>
-                                      }
-                                      <span className="pb-sample-meta">
-                                        {s.runtime_ms}ms{s.timed_out && " · timed out"}
-                                      </span>
-                                    </div>
-                                    <div className="pb-sample-grid">
-                                      <div>
-                                        <div className="pb-label">Generated Code</div>
-                                        <pre className="pb-code">{s.extracted_code || "// Extraction failed"}</pre>
-                                      </div>
-                                      <div>
-                                        <div className="pb-label">Sandbox Output</div>
-                                        <pre className="pb-code" style={{ color: s.passed ? "var(--color-pass)" : "var(--color-fail)" }}>
-                                          {[s.stdout, s.stderr].filter(Boolean).join("\n") || "No output"}
-                                        </pre>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <section className="panel" aria-labelledby="config-title">
+          <div className="panel-head"><h2 className="h2" id="config-title">Configuration</h2></div>
+          <dl className="panel-pad kv">
+            <dt>Provider</dt><dd>{run.provider}</dd>
+            <dt>Languages</dt><dd>{run.language_filter ?? "All"}</dd>
+            <dt>Samples per task</dt><dd>{run.samples_per_task}</dd>
+            <dt>k</dt><dd>{run.k}</dd>
+            <dt>Temperature</dt><dd>{run.temperature}</dd>
+            <dt>Mean task pass@k</dt><dd>{data.results.length ? pct(run.pass_at_k) : "—"}</dd>
+            <dt>Commit</dt><dd className="code">{run.git_sha ? run.git_sha.slice(0, 10) : "—"}</dd>
+            <dt>Run ID</dt><dd className="code" style={{ overflowWrap: "anywhere" }}>{run.id}</dd>
+          </dl>
+        </section>
       </div>
+    </>
+  );
+}
+
+function Crumbs({ id }: { id: string }) {
+  return (
+    <nav className="crumbs" aria-label="Breadcrumb">
+      <Link href="/runs">Runs</Link>
+      <span aria-hidden="true">/</span>
+      <span className="code">{shortId(id)}</span>
+    </nav>
+  );
+}
+
+function MatrixRow({
+  result, samples, n, current, onSelect,
+}: {
+  result: TaskResult;
+  samples: Sample[];
+  n: number;
+  current: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const slots = Array.from({ length: Math.max(n, samples.length) }, (_, i) => samples[i]);
+  return (
+    <div className="matrix-row" role="row">
+      <span className="m-task" role="cell">
+        <span className="row" style={{ gap: 10, flexWrap: "nowrap" }}>
+          <Lang lang={result.language} />
+          <Link href={`/tasks/${encodeURIComponent(result.task_id)}`} className="mono-id" title={result.task_id}>
+            {result.task_id.split("/").slice(1).join("/") || result.task_id}
+          </Link>
+        </span>
+      </span>
+      <span className="m-cells" role="cell">
+        {slots.map((s, i) =>
+          s ? (
+            <button
+              key={s.id}
+              type="button"
+              className={`cell ${s.passed ? "p" : "f"}`}
+              aria-pressed={current === s.id}
+              aria-label={`${result.task_id} sample ${i + 1}: ${s.passed ? "passed" : humanize(s.failure_kind ?? "failed")}`}
+              title={`Sample ${i + 1}: ${s.passed ? "passed" : humanize(s.failure_kind ?? "failed")}`}
+              onClick={() => onSelect(s.id)}
+            />
+          ) : (
+            <span key={`empty-${i}`} className="cell" aria-hidden="true" />
+          ),
+        )}
+        <span className="m-diff"><Difficulty level={result.difficulty} /></span>
+      </span>
+      <span className="m-score" role="cell" style={{ textAlign: "right" }}>
+        <Score value={result.task_pass_at_k} digits={0} />
+      </span>
     </div>
   );
 }

@@ -1,221 +1,185 @@
 "use client";
 
-// Compare Runs page — Industrial dark theme
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowLeftRight } from "lucide-react";
+import { api, relativeTime, pct, type CompareRow, type Run } from "@/lib/api";
+import { Empty, PageHead, Score, SkeletonRows } from "@/components/ui";
 
-import { useEffect, useState } from "react";
+const runLabel = (r: Run) => `${r.model} (${r.provider}), ${relativeTime(r.created_at)}`;
 
-interface Run {
-  id: string;
-  model: string;
-  provider: string;
-  created_at: string;
-  pass_at_k: number;
-  status: string;
-}
-
-interface CompareRow {
-  task_id: string;
-  run_a: number;
-  run_b: number;
-}
-
-function ScoreCell({ val }: { val: number }) {
-  if (val === 1.0) return <span className="pb-cell-pass-score pb-pass">✓ Pass</span>;
-  if (val === 0.0) return <span className="pb-cell-pass-score pb-fail">✗ Fail</span>;
-  return <span className="pb-cell-pass-score" style={{ color: "var(--color-warn)" }}>{(val * 100).toFixed(0)}%</span>;
-}
-
-function DeltaCell({ delta }: { delta: number }) {
-  if (delta === 0) return <span className="pb-cell-muted">—</span>;
-  const positive = delta > 0;
+function Change({ delta }: { delta: number }) {
+  if (Math.abs(delta) < 1e-9) return <span className="muted">No change</span>;
+  const up = delta > 0;
   return (
-    <span className="pb-cell-pass-score" style={{ color: positive ? "var(--color-pass)" : "var(--color-fail)" }}>
-      {positive ? "+" : ""}{(delta * 100).toFixed(0)}%
+    <span className={`score ${up ? "score-hi" : "score-lo"}`}>
+      {up ? "+" : "−"}{Math.abs(delta * 100).toFixed(0)} pts
     </span>
   );
 }
 
-export default function CompareRuns() {
-  const [runs, setRuns] = useState<Run[]>([]);
-  const [runA, setRunA] = useState("");
-  const [runB, setRunB] = useState("");
-  const [compareData, setCompareData] = useState<CompareRow[]>([]);
-  const [loading, setLoading] = useState(false);
+export default function Compare() {
+  const [runs, setRuns] = useState<Run[] | null>(null);
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+  const [fetched, setFetched] = useState<{ key: string; rows: CompareRow[] } | null>(null);
+  const [changedOnly, setChangedOnly] = useState(false);
 
   useEffect(() => {
-    fetch("/api/runs?limit=50")
-      .then((r) => r.json())
-      .then((data: Run[]) => {
-        const completed = data.filter((r) => r.status === "COMPLETED");
-        setRuns(completed);
-        if (completed.length >= 2) { setRunA(completed[0].id); setRunB(completed[1].id); }
-        else if (completed.length === 1) setRunA(completed[0].id);
+    api<Run[]>("/runs?limit=100")
+      .then((all) => {
+        const done = all.filter((r) => r.status === "COMPLETED");
+        setRuns(done);
+        const q = new URLSearchParams(window.location.search);
+        const qa = q.get("a"), qb = q.get("b");
+        setA(qa && done.some((r) => r.id === qa) ? qa : done[1]?.id ?? done[0]?.id ?? "");
+        setB(qb && done.some((r) => r.id === qb) ? qb : done[1] ? done[0].id : "");
       })
-      .catch(console.error);
+      .catch(() => setRuns([]));
   }, []);
 
   useEffect(() => {
-    if (!runA || !runB || runA === runB) return;
-    setLoading(true);
-    fetch(`/api/runs/compare?run_a=${runA}&run_b=${runB}`)
-      .then((r) => r.json())
-      .then((data: CompareRow[]) => { setCompareData(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [runA, runB]);
+    if (!a || !b || a === b) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("a", a);
+    url.searchParams.set("b", b);
+    window.history.replaceState(null, "", url);
+    const key = `${a}|${b}`;
+    api<CompareRow[]>(`/runs/compare?run_a=${a}&run_b=${b}`)
+      .then((rows) => setFetched({ key, rows }))
+      .catch(() => setFetched({ key, rows: [] }));
+  }, [a, b]);
 
-  const getRunLabel = (id: string) => {
-    const run = runs.find((r) => r.id === id);
-    if (!run) return id.substring(0, 8);
-    return `${run.model} · ${run.provider} · ${new Date(run.created_at).toLocaleDateString()}`;
-  };
+  const rows = fetched?.key === `${a}|${b}` ? fetched.rows : null;
 
-  const runAScore = runs.find((r) => r.id === runA)?.pass_at_k ?? 0;
-  const runBScore = runs.find((r) => r.id === runB)?.pass_at_k ?? 0;
+  const runA = runs?.find((r) => r.id === a);
+  const runB = runs?.find((r) => r.id === b);
+
+  const summary = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      better: list.filter((r) => r.run_b > r.run_a).length,
+      worse: list.filter((r) => r.run_b < r.run_a).length,
+      same: list.filter((r) => r.run_b === r.run_a).length,
+    };
+  }, [rows]);
+
+  const shown = (rows ?? [])
+    .filter((r) => !changedOnly || r.run_a !== r.run_b)
+    .sort((x, y) => Math.abs(y.run_b - y.run_a) - Math.abs(x.run_b - x.run_a) || x.task_id.localeCompare(y.task_id));
+
+  if (runs && runs.length < 2) {
+    return (
+      <>
+        <PageHead title="Compare runs" />
+        <div className="panel">
+          <Empty title="You need two completed runs to compare" action={<Link href="/" className="btn btn-primary">Start a run</Link>}>
+            {runs.length === 1 ? "You have one completed run so far." : "No runs have completed yet."} Try the same tasks on a second model, then come back.
+          </Empty>
+        </div>
+      </>
+    );
+  }
 
   return (
-    <div className="pb-fade-up">
-      {/* Header */}
-      <div className="pb-mb-xl">
-        <div className="pb-eyebrow">◈ Diff Analysis</div>
-        <h1 className="pb-page-title">Compare Runs</h1>
-        <p className="pb-page-desc-sm">Side-by-side pass@k analysis across models and providers.</p>
+    <>
+      <PageHead title="Compare runs" lede="See which tasks one model solves that another doesn't. Pick a baseline and a challenger." />
+
+      <div className="compare-pick panel panel-pad">
+        <RunPicker id="run-a" label="Baseline" runs={runs} value={a} onChange={setA} run={runA} />
+        <button
+          type="button"
+          className="btn btn-quiet compare-swap"
+          onClick={() => { setA(b); setB(a); }}
+          aria-label="Swap baseline and challenger"
+          title="Swap"
+        >
+          <ArrowLeftRight size={16} aria-hidden="true" />
+        </button>
+        <RunPicker id="run-b" label="Challenger" runs={runs} value={b} onChange={setB} run={runB} delta={runA && runB ? runB.pass_at_k - runA.pass_at_k : undefined} />
       </div>
 
-      {/* Selector panel */}
-      <div className="pb-card pb-p-card pb-mb-lg">
-        <div className="pb-compare-selector-panel">
-          <div>
-            <label className="pb-label" htmlFor="runASelect">Run A — Baseline</label>
-            <select
-              id="runASelect"
-              className="pb-input"
-              title="Select baseline run for comparison"
-              value={runA}
-              onChange={(e) => setRunA(e.target.value)}
-            >
-              <option value="">Select a run…</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>{getRunLabel(r.id)}</option>
-              ))}
-            </select>
-            {runA && (
-              <div className="pb-compare-score">{(runAScore * 100).toFixed(1)}%</div>
-            )}
-          </div>
-
-          <div className="pb-compare-vs">vs</div>
-
-          <div>
-            <label className="pb-label" htmlFor="runBSelect">Run B — Comparison</label>
-            <select
-              id="runBSelect"
-              className="pb-input"
-              title="Select run to compare against baseline"
-              value={runB}
-              onChange={(e) => setRunB(e.target.value)}
-            >
-              <option value="">Select a run…</option>
-              {runs.map((r) => (
-                <option key={r.id} value={r.id}>{getRunLabel(r.id)}</option>
-              ))}
-            </select>
-            {runB && (
-              <div
-                className="pb-compare-score"
-                style={{
-                  color: runBScore > runAScore ? "var(--color-pass)" :
-                         runBScore < runAScore ? "var(--color-fail)" :
-                         "var(--color-muted)",
-                }}
-              >
-                {(runBScore * 100).toFixed(1)}%
-                {runA && runB && runA !== runB && (
-                  <span className="pb-compare-delta-inline">
-                    <DeltaCell delta={runBScore - runAScore} />
-                  </span>
-                )}
+      {a && b && a === b ? (
+        <div className="notice notice-part section">Pick two different runs.</div>
+      ) : (
+        <section className="section" aria-labelledby="by-task">
+          <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
+            <h2 className="h2" id="by-task">By task</h2>
+            {rows && rows.length > 0 && (
+              <div className="row sub" style={{ gap: 18 }}>
+                <span><strong className="score-hi">{summary.better}</strong> improved</span>
+                <span><strong className="score-lo">{summary.worse}</strong> regressed</span>
+                <span><strong>{summary.same}</strong> unchanged</span>
+                <label className="row" style={{ gap: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} style={{ accentColor: "var(--accent)" }} />
+                  Changed only
+                </label>
               </div>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Needs more runs */}
-      {runs.length < 2 && (
-        <div className="pb-card pb-p-card pb-text-center">
-          <div className="pb-empty-title">Need at least 2 completed runs</div>
-          <p className="pb-empty-body">Run benchmarks from the Dashboard and come back here to compare them.</p>
-        </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <div className="pb-loading">
-          <span className="pb-pulse">◈ Computing comparison…</span>
-        </div>
-      )}
-
-      {/* Same run */}
-      {!loading && runA && runB && runA === runB && (
-        <div className="pb-card pb-p-card pb-text-center">
-          <span className="pb-cell-mono" style={{ color: "var(--color-warn)" }}>
-            ⚠ Select two different runs to compare.
-          </span>
-        </div>
-      )}
-
-      {/* Results table */}
-      {!loading && compareData.length > 0 && runA !== runB && (
-        <div className="pb-card pb-fade-up-1 pb-overflow-hidden">
-          <table className="pb-table">
-            <thead>
-              <tr>
-                <th>Task ID</th>
-                <th>Run A</th>
-                <th>Run B</th>
-                <th>Delta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {compareData.map((row) => {
-                const delta = row.run_b - row.run_a;
-                return (
-                  <tr
-                    key={row.task_id}
-                    style={{
-                      backgroundColor:
-                        delta > 0 ? "rgba(34,211,165,0.05)" :
-                        delta < 0 ? "rgba(255,69,69,0.05)" :
-                        "transparent",
-                    }}
-                  >
-                    <td>
-                      <a href={`/tasks/${encodeURIComponent(row.task_id)}`} className="pb-cell-id">
-                        {row.task_id}
-                      </a>
-                    </td>
-                    <td><ScoreCell val={row.run_a} /></td>
-                    <td><ScoreCell val={row.run_b} /></td>
-                    <td><DeltaCell delta={delta} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="pb-compare-footer">
-            <span>{compareData.length} tasks compared</span>
-            <span>
-              B better: {compareData.filter((r) => r.run_b > r.run_a).length} ·&nbsp;
-              A better: {compareData.filter((r) => r.run_a > r.run_b).length} ·&nbsp;
-              Tied: {compareData.filter((r) => r.run_a === r.run_b).length}
-            </span>
+          <div className="panel">
+            {rows && shown.length === 0 ? (
+              <Empty title={rows.length === 0 ? "These runs share no tasks" : "No task changed between these runs"}>
+                {rows.length === 0 ? "They were probably filtered to different languages or tags." : undefined}
+              </Empty>
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th className="num">Baseline</th>
+                      <th className="num">Challenger</th>
+                      <th className="num">Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows === null ? <SkeletonRows cols={4} rows={6} /> : shown.map((r) => (
+                      <tr key={r.task_id}>
+                        <td><Link href={`/tasks/${encodeURIComponent(r.task_id)}`} className="mono-id">{r.task_id}</Link></td>
+                        <td className="num"><Score value={r.run_a} digits={0} /></td>
+                        <td className="num"><Score value={r.run_b} digits={0} /></td>
+                        <td className="num"><Change delta={r.run_b - r.run_a} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        </div>
+        </section>
       )}
+    </>
+  );
+}
 
-      {!loading && runA && runB && runA !== runB && compareData.length === 0 && (
-        <div className="pb-card pb-p-card pb-text-center">
-          <span className="pb-cell-muted">No common tasks found between these two runs.</span>
+function RunPicker({
+  id, label, runs, value, onChange, run, delta,
+}: {
+  id: string;
+  label: string;
+  runs: Run[] | null;
+  value: string;
+  onChange: (v: string) => void;
+  run?: Run;
+  delta?: number;
+}) {
+  return (
+    <div className="field">
+      <label className="field-label" htmlFor={id}>{label}</label>
+      <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)} disabled={!runs}>
+        {!runs && <option>Loading runs…</option>}
+        {runs?.map((r) => <option key={r.id} value={r.id}>{runLabel(r)}</option>)}
+      </select>
+      {run && (
+        <div className="row" style={{ marginTop: 8, gap: 12, alignItems: "baseline" }}>
+          <span className="compare-score"><Score value={run.pass_at_k} /></span>
+          <span className="sub">pass@{run.k}, {run.total_tasks} tasks</span>
+          {delta !== undefined && Math.abs(delta) > 1e-9 && (
+            <span className={`score ${delta > 0 ? "score-hi" : "score-lo"}`}>
+              {delta > 0 ? "+" : "−"}{pct(Math.abs(delta))}
+            </span>
+          )}
         </div>
       )}
     </div>

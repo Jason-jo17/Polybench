@@ -1,115 +1,90 @@
 "use client";
 
-// Task Detail page — fixes 404 from compare page /tasks/[id] links
-
-import { useEffect, useState, use } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-
-interface TaskDetail {
-  id: string;
-  title: string;
-  language: string;
-  difficulty: string;
-  tags: string[];
-  prompt: string;
-  signature: string;
-}
-
-const LANG_COLORS: Record<string, string> = {
-  python:     "var(--color-accent)",
-  javascript: "#F5A623",
-  go:         "#22D3A5",
-  rust:       "#E87040",
-};
+import { EyeOff } from "lucide-react";
+import { api, type Task } from "@/lib/api";
+import { Difficulty, Empty, Lang, Skeleton } from "@/components/ui";
 
 export default function TaskDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const taskId = decodeURIComponent(id);
-
-  const [task, setTask] = useState<TaskDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [task, setTask] = useState<Task | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch(`/api/tasks/${encodeURIComponent(taskId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Task not found: ${taskId}`);
-        return r.json();
-      })
-      .then((d) => { setTask(d); setLoading(false); })
-      .catch((e) => { setError(e.message); setLoading(false); });
+    api<Task>(`/tasks/${encodeURIComponent(taskId)}`).then(setTask).catch((e: Error) => setError(e.message));
   }, [taskId]);
 
-  if (loading)
-    return <div className="pb-loading"><span className="pb-pulse">◈ Loading task…</span></div>;
+  const crumbs = (
+    <nav className="crumbs" aria-label="Breadcrumb">
+      <Link href="/tasks">Tasks</Link>
+      <span aria-hidden="true">/</span>
+      <span className="code">{taskId}</span>
+    </nav>
+  );
 
-  if (error || !task)
+  if (error) {
     return (
-      <div className="pb-fade-up">
-        <div className="pb-breadcrumb pb-mb-lg">
-          <Link href="/tasks" className="pb-back-link">← Back to Tasks</Link>
+      <>
+        {crumbs}
+        <div className="panel">
+          <Empty title="Task not found" action={<Link href="/tasks" className="btn btn-quiet">Browse tasks</Link>}>
+            No task has the ID <code>{taskId}</code>. It may have been renamed or removed from the tasks directory.
+          </Empty>
         </div>
-        <div className="pb-card pb-p-card pb-text-center">
-          <div className="pb-cell-mono" style={{ color: "var(--color-fail)", marginBottom: "8px" }}>
-            ✗ {error || "Task not found"}
-          </div>
-          <p className="pb-cell-muted">
-            Task ID: <code className="pb-cell-mono pb-accent">{taskId}</code>
-          </p>
-        </div>
-      </div>
+      </>
     );
+  }
 
-  const langColor = LANG_COLORS[task.language] || "var(--color-accent)";
+  if (!task) {
+    return (
+      <>
+        {crumbs}
+        <Skeleton w={360} h={40} />
+        <div style={{ height: 28 }} />
+        <Skeleton h={240} />
+      </>
+    );
+  }
 
   return (
-    <div className="pb-fade-up">
-      {/* Breadcrumb */}
-      <div className="pb-breadcrumb">
-        <Link href="/tasks" className="pb-breadcrumb-link">Tasks</Link>
-        <span className="pb-breadcrumb-sep">/</span>
-        <span className="pb-breadcrumb-active">{taskId}</span>
-      </div>
-
-      {/* Header */}
-      <div className="pb-task-header">
-        <div className="pb-task-badge-row">
-          <span className="pb-badge" style={{ background: `${langColor}20`, color: langColor }}>
-            {task.language}
-          </span>
-          <span className={`pb-badge pb-badge-${task.difficulty}`}>{task.difficulty}</span>
-          {task.tags?.map((tag) => (
-            <span key={tag} className="pb-tag-chip">{tag}</span>
-          ))}
+    <>
+      {crumbs}
+      <header style={{ marginBottom: 32 }}>
+        <h1 className="page-title">{task.title || task.id}</h1>
+        <div className="row" style={{ marginTop: 14, gap: 20 }}>
+          <Lang lang={task.language} />
+          <Difficulty level={task.difficulty} />
+          <span className="sub">{task.timeout_seconds}s time limit</span>
+          {task.tags.length > 0 && (
+            <span className="row" style={{ gap: 6 }}>
+              {task.tags.map((t) => <span key={t} className="chip">{t}</span>)}
+            </span>
+          )}
         </div>
-        <h1 className="pb-page-title">{task.title || taskId}</h1>
-        <div className="pb-task-id-label">{taskId}</div>
-      </div>
+      </header>
 
-      <div className="pb-grid-2 pb-mb-md">
-        {/* Problem Statement */}
-        <div className="pb-card pb-fade-up-1 pb-p-card">
-          <div className="pb-label pb-mb-md">Problem Statement</div>
-          <div style={{ fontSize: "14px", lineHeight: 1.7, color: "var(--color-text)" }}>
-            {task.prompt}
-          </div>
-        </div>
+      <div className="task-body">
+        <section className="panel panel-pad" aria-labelledby="prompt-title">
+          <h2 className="h2" id="prompt-title" style={{ marginBottom: 12 }}>Prompt</h2>
+          <div className="prose">{task.prompt}</div>
+        </section>
 
-        {/* Required Signature */}
-        <div className="pb-card pb-fade-up-2 pb-p-card">
-          <div className="pb-label pb-mb-md">Required Signature</div>
-          <pre className="pb-code" style={{ maxHeight: "none" }}>
-            {task.signature}
-          </pre>
-          <div className="pb-info-box">
-            <div className="pb-info-box-warn">⚠ Test suite is hidden</div>
-            The model is evaluated against a private test suite that is never included in the prompt.
-            Extraction failure, compile errors, and wrong output are all scored automatically.
+        <div className="stack" style={{ gap: 16 }}>
+          <section className="panel panel-pad" aria-labelledby="sig-title">
+            <h2 className="h2" id="sig-title" style={{ marginBottom: 12 }}>Required signature</h2>
+            <pre className="code-block" style={{ maxHeight: "none" }}>{task.signature}</pre>
+          </section>
+          <div className="notice">
+            <EyeOff size={16} style={{ flexShrink: 0, marginTop: 2 }} aria-hidden="true" />
+            <span>
+              The test suite stays hidden. The model sees only the prompt and signature, so it can&apos;t
+              write code that targets specific test cases.
+            </span>
           </div>
         </div>
       </div>
-
-      <Link href="/tasks" className="pb-back-link">← Back to Tasks Library</Link>
-    </div>
+    </>
   );
 }
