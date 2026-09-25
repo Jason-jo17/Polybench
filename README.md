@@ -113,7 +113,7 @@ cp .env.example .env      # optional: API keys, POLYBENCH_DASHBOARD_PASSWORD, PO
 docker compose up -d --build
 ```
 
-This starts Postgres, the API and the dashboard. The dashboard is at http://localhost:3000, and the API is also exposed at http://localhost:8001. The first run builds the four sandbox images, which takes a few minutes.
+This starts Postgres, the API and the dashboard. The dashboard is at http://localhost:3000, and the API is also exposed at http://localhost:8001. If those ports are taken, set `POLYBENCH_WEB_PORT` and `POLYBENCH_API_PORT` in `.env`. The first run builds the four sandbox images, which takes a few minutes.
 
 The API starts sandbox containers through the host's Docker socket, which gives it root-equivalent access to the host. Only run the stack on a machine you trust it with, and set a strong `POSTGRES_PASSWORD` in `polybench/.env` anywhere other than your own computer (`POSTGRES_USER` and `POSTGRES_DB` can be changed the same way).
 
