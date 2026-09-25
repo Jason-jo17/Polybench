@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const basicAuth = req.headers.get("authorization");
   const dashboardPassword = process.env.POLYBENCH_DASHBOARD_PASSWORD;
 
