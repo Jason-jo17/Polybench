@@ -27,6 +27,8 @@ class BenchmarkRun(SQLModel, table=True):
     pass_at_k: float
     status: str = Field(default="PENDING")
     git_sha: str | None = None
+    # Comma-separated tag filter the run was started with, so it can be resumed.
+    tag_filter: str | None = None
 
 
 class TaskResult(SQLModel, table=True):

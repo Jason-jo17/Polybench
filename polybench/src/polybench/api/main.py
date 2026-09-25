@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,7 @@ from polybench.api.worker import execute_benchmark_run
 from polybench.compare import compare_runs
 from polybench.config import settings
 from polybench.db import init_db
-from polybench.engine import RunConfig, create_run
+from polybench.engine import RunConfig, config_from_run, create_run
 from polybench.models import BenchmarkRun, TaskResult, Sample
 from polybench.providers.anthropic_provider import AnthropicProvider
 from polybench.providers.base import LLMProvider
@@ -74,27 +75,59 @@ def _make_provider(provider: str, model: str, temperature: float) -> LLMProvider
     raise ValueError(f"Unknown provider: {provider}")
 
 
-def _mark_orphaned_runs_failed() -> None:
-    """Runs left PENDING or RUNNING by a previous server process can't finish."""
+def _interrupted_runs() -> list[BenchmarkRun]:
+    """Runs a previous server process left PENDING or RUNNING."""
     from polybench.db import get_session
 
     with get_session() as session:
-        orphans = session.exec(
-            select(BenchmarkRun).where(
-                col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
-            )
-        ).all()
-        for run in orphans:
+        return list(
+            session.exec(
+                select(BenchmarkRun).where(
+                    col(BenchmarkRun.status).in_(["PENDING", "RUNNING"])
+                )
+            ).all()
+        )
+
+
+def _mark_failed(run_id: str, reason: str) -> None:
+    from polybench.db import get_session
+
+    with get_session() as session:
+        run = session.get(BenchmarkRun, run_id)
+        if run is not None:
             run.status = "FAILED"
-        if orphans:
+            session.add(run)
             session.commit()
-            logging.info(f"Marked {len(orphans)} orphaned runs as FAILED.")
+    logging.warning("Run %s marked FAILED: %s", run_id, reason)
+
+
+def _resume_runs(runs: list[BenchmarkRun]) -> None:
+    """Finish interrupted runs one after another; stored samples are kept."""
+    for run in runs:
+        try:
+            provider = _make_provider(run.provider, run.model, run.temperature)
+        except Exception as exc:
+            _mark_failed(run.id, f"can't recreate provider to resume it ({exc})")
+            continue
+        logging.info("Resuming interrupted run %s (%s)", run.id, run.model)
+        execute_benchmark_run(run.id, config_from_run(run), provider, _TASKS_DEFAULT)
+
+
+def _handle_interrupted_runs() -> None:
+    runs = _interrupted_runs()
+    if not runs:
+        return
+    if not settings.polybench_resume_runs:
+        for run in runs:
+            _mark_failed(run.id, "interrupted by a server restart")
+        return
+    threading.Thread(target=_resume_runs, args=(runs,), daemon=True).start()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     init_db()
-    _mark_orphaned_runs_failed()
+    _handle_interrupted_runs()
     yield
 
 
